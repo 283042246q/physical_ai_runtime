@@ -33,7 +33,7 @@ robot-specific descriptions and hardware integrations use
 flat ROS-package repository imported once at `src/apps` through
 `repos/example.repos`. Marvin embodiment packages stay in their own repos
 under `src/embodiments/robots/marvin/`. Reusable marker teleop remains a
-workspace-owned package at `src/toolbox/rviz_interactive_marker_teleop`.
+workspace-owned package at `src/toolbox/rviz_interactive_marker_pose_source`.
 
 Reusable functional modules (`repos/necessary.repos`):
 
@@ -94,7 +94,7 @@ Example 1 (Marvin apps from `runtime_resources`) — fetch/build steps and
 package map: [EXAMPLE1.md](EXAMPLE1.md).
 
 - `runtime_resources` → `src/apps` (`repos/example.repos`)
-- `rviz_interactive_marker_teleop` → `src/toolbox/` (workspace-owned)
+- `rviz_interactive_marker_pose_source` → `src/toolbox/` (workspace-owned)
 
 Directories express ownership. External repositories are imported at the roots
 declared by the manifests; workspace-owned reusable utilities remain directly

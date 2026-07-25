@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(rviz_interactive_marker_teleop)
+project(rviz_interactive_marker_pose_source)
 
 find_package(ament_cmake REQUIRED)
 

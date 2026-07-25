@@ -329,7 +329,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openldap-2.6.13-hbde042b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.3-h35e630c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/orocos-kdl-1.5.3-hd2df1e3_2.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/osqp-eigen-0.11.2-h37ced84_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/osqp-eigen-0.11.0-h37ced84_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/p11-kit-0.26.4-h3435931_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pango-1.56.4-hda50119_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/patchelf-0.17.2-h58526e2_0.conda
@@ -975,7 +975,6 @@ environments:
       - conda: https://prefix.dev/gabriel-robotics/linux-64/libpiper-0.1.0-hb0f4dca_0.conda
       - conda: https://prefix.dev/gabriel-robotics/linux-64/placo-0.9.23-hb0f4dca_0.conda
       - conda: https://prefix.dev/gabriel-robotics/linux-64/ros-jazzy-episode-recorder-0.3.0-hb0f4dca_0.conda
-      - conda: https://prefix.dev/gabriel-robotics/linux-64/ros-jazzy-manipulation-position-controllers-0.1.0-hb0f4dca_0.conda
   default:
     channels:
     - url: https://conda.anaconda.org/robostack-jazzy/
@@ -1301,7 +1300,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openldap-2.6.13-hbde042b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.3-h35e630c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/orocos-kdl-1.5.3-hd2df1e3_2.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/osqp-eigen-0.11.2-h37ced84_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/osqp-eigen-0.11.0-h37ced84_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/p11-kit-0.26.4-h3435931_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pango-1.56.4-hda50119_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/patchelf-0.17.2-h58526e2_0.conda
@@ -1947,7 +1946,6 @@ environments:
       - conda: https://prefix.dev/gabriel-robotics/linux-64/libpiper-0.1.0-hb0f4dca_0.conda
       - conda: https://prefix.dev/gabriel-robotics/linux-64/placo-0.9.23-hb0f4dca_0.conda
       - conda: https://prefix.dev/gabriel-robotics/linux-64/ros-jazzy-episode-recorder-0.3.0-hb0f4dca_0.conda
-      - conda: https://prefix.dev/gabriel-robotics/linux-64/ros-jazzy-manipulation-position-controllers-0.1.0-hb0f4dca_0.conda
       - pypi: direct+https://pypi.nvidia.com/isaacteleop/isaacteleop-1.3.131-cp312-cp312-manylinux_2_35_x86_64.whl
       - pypi: git+https://github.com/Gabriel-Ning/curobo.git?rev=77c002b02aef02e634cbf9ddc3ea08ea8d9a64c3#77c002b02aef02e634cbf9ddc3ea08ea8d9a64c3
       - pypi: git+https://github.com/Gabriel-Ning/pyroki.git?rev=388e43e1fc0d0ee382968d3dd72970fd62a0450c#388e43e1fc0d0ee382968d3dd72970fd62a0450c
@@ -2034,25 +2032,25 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fe/21/99a0cdaf54eb35e77623c41b5a2c9472ee4404bba687052791fe2aba6773/tqdm-4.69.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fe/ed/f1831681fce0e3242346e5458486003c5f124ed69e5e0b847fd029db4973/websockets-16.1.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
-      - pypi: https://pypi.nvidia.com/cuda-toolkit/cuda_toolkit-13.0.3.0-py2.py3-none-any.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cublas/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cuda-cupti/nvidia_cuda_cupti-13.0.85-py3-none-manylinux_2_25_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cuda-nvrtc/nvidia_cuda_nvrtc-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cuda-runtime/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cudnn-cu13/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cufft/nvidia_cufft-12.0.0.61-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cufile/nvidia_cufile-1.15.1.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-curand/nvidia_curand-10.4.0.35-py3-none-manylinux_2_27_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cusolver/nvidia_cusolver-12.0.4.66-py3-none-manylinux_2_27_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cusparse/nvidia_cusparse-12.6.3.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-cusparselt-cu13/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-nccl-cu13/nvidia_nccl_cu13-2.29.7-py3-none-manylinux_2_18_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-nvfatbin/nvidia_nvfatbin-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-nvjitlink/nvidia_nvjitlink-13.3.33-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-nvshmem-cu13/nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-nvtx/nvidia_nvtx-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl
-      - pypi: https://pypi.nvidia.com/nvidia-nvvm/nvidia_nvvm-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
-      - pypi: https://pypi.nvidia.com/warp-lang/warp_lang-1.15.0-py3-none-manylinux_2_28_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/cuda-toolkit/cuda_toolkit-13.0.3.0-py2.py3-none-any.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cublas/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cuda-cupti/nvidia_cuda_cupti-13.0.85-py3-none-manylinux_2_25_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cuda-nvrtc/nvidia_cuda_nvrtc-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cuda-runtime/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cudnn-cu13/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cufft/nvidia_cufft-12.0.0.61-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cufile/nvidia_cufile-1.15.1.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-curand/nvidia_curand-10.4.0.35-py3-none-manylinux_2_27_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cusolver/nvidia_cusolver-12.0.4.66-py3-none-manylinux_2_27_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cusparse/nvidia_cusparse-12.6.3.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-cusparselt-cu13/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-nccl-cu13/nvidia_nccl_cu13-2.29.7-py3-none-manylinux_2_18_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-nvfatbin/nvidia_nvfatbin-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-nvjitlink/nvidia_nvjitlink-13.3.33-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-nvshmem-cu13/nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-nvtx/nvidia_nvtx-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/nvidia-nvvm/nvidia_nvvm-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
+      - pypi: https://pypi.nvidia.cn/warp-lang/warp_lang-1.15.0-py3-none-manylinux_2_28_x86_64.whl
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
   build_number: 20
@@ -7349,13 +7347,13 @@ packages:
     - orocos-kdl >=1.5.3,<1.6.0a0
   size: 389625
   timestamp: 1778045635055
-- conda: https://conda.anaconda.org/conda-forge/linux-64/osqp-eigen-0.11.2-h37ced84_0.conda
-  sha256: 8ee3335a0fd4536264ec169cba464f1b849cc80af86c7d8c23af102d88f02d14
-  md5: f76cc9ed17ea1e9a2a3415adacb6def2
+- conda: https://conda.anaconda.org/conda-forge/linux-64/osqp-eigen-0.11.0-h37ced84_2.conda
+  sha256: 18d6438b892900e0f5a481032403522cdf75d4c215f38a3ac86cf5bf67e3b5fb
+  md5: e97c58ad03aa4c92b13068cb43f600d3
   depends:
   - eigen
-  - libstdcxx >=14
   - libgcc >=14
+  - libstdcxx >=14
   - __glibc >=2.17,<3.0.a0
   - libosqp >=1.0.0,<1.0.1.0a0
   - eigen-abi >=5.0.1.80,<5.0.1.81.0a0
@@ -7364,9 +7362,9 @@ packages:
   purls: []
   run_exports:
     weak:
-    - osqp-eigen >=0.11.2,<0.12.0a0
-  size: 40576
-  timestamp: 1784534078138
+    - osqp-eigen >=0.11.0,<0.12.0a0
+  size: 40311
+  timestamp: 1773776855387
 - conda: https://conda.anaconda.org/conda-forge/linux-64/p11-kit-0.26.4-h3435931_0.conda
   sha256: ce1c79a0ae1301aa1f94f3afe1075e4cbb86656767011fde8995b9b1efc46516
   md5: 9980feddc5ad41bac53f7396376e6a2f
@@ -20198,34 +20196,6 @@ packages:
   run_exports: {}
   size: 413998
   timestamp: 1784819532070
-- conda: https://prefix.dev/gabriel-robotics/linux-64/ros-jazzy-manipulation-position-controllers-0.1.0-hb0f4dca_0.conda
-  sha256: eeca95d1a00e0ca2549d403d61da851549d3fc4ae07e20d27111c4c727ca7a7e
-  md5: 6424af35c99898abecc33f2f218fd9b8
-  depends:
-  - libosqp
-  - osqp-eigen
-  - placo ==0.9.23
-  - ros-jazzy-control-toolbox
-  - ros-jazzy-controller-interface
-  - ros-jazzy-geometry-msgs
-  - ros-jazzy-hardware-interface
-  - ros-jazzy-pinocchio
-  - ros-jazzy-pluginlib
-  - ros-jazzy-rclcpp
-  - ros-jazzy-rclcpp-lifecycle
-  - ros-jazzy-realtime-tools
-  - ros-jazzy-ruckig
-  - ros-jazzy-sensor-msgs
-  - ros-jazzy-std-msgs
-  - ros-jazzy-trajectory-msgs
-  - libstdcxx >=15
-  - libgcc >=15
-  - osqp-eigen >=0.11.0,<0.12.0a0
-  - libosqp >=1.0.0,<1.0.1.0a0
-  license: Apache-2.0
-  run_exports: {}
-  size: 543584
-  timestamp: 1784109798551
 - pypi: direct+https://pypi.nvidia.com/isaacteleop/isaacteleop-1.3.131-cp312-cp312-manylinux_2_35_x86_64.whl
   name: isaacteleop
   version: 1.3.131
@@ -21649,7 +21619,7 @@ packages:
   version: 16.1.1
   sha256: 0f62863e8a00a6d33c3d6566ec0b89f23787b747ffe0c3bc71ec0e76b82c94b1
   requires_python: '>=3.10'
-- pypi: https://pypi.nvidia.com/cuda-toolkit/cuda_toolkit-13.0.3.0-py2.py3-none-any.whl
+- pypi: https://pypi.nvidia.cn/cuda-toolkit/cuda_toolkit-13.0.3.0-py2.py3-none-any.whl
   name: cuda-toolkit
   version: 13.0.3.0
   sha256: d693caaa261214ddd7dbb60d68e71cbed884e68c2be7509778f3051da0b91c3f
@@ -21714,7 +21684,7 @@ packages:
   - nvidia-cuda-opencl==13.0.85.* ; (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'opencl') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'opencl')
   - nvidia-cuda-profiler-api==13.0.85.* ; (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'profiler') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'profiler') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'profiler')
   - nvidia-cuda-sanitizer-api==13.0.85.* ; (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'sanitizer') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'sanitizer') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'sanitizer')
-- pypi: https://pypi.nvidia.com/nvidia-cublas/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cublas/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_x86_64.whl
   name: nvidia-cublas
   version: 13.1.1.3
   sha256: 37936a16db8fe4ac1f065c2139360608a543a09275cb1a1af612e08cfa065436
@@ -21722,25 +21692,25 @@ packages:
   requires_dist:
   - nvidia-cuda-nvrtc
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cuda-cupti/nvidia_cuda_cupti-13.0.85-py3-none-manylinux_2_25_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cuda-cupti/nvidia_cuda_cupti-13.0.85-py3-none-manylinux_2_25_x86_64.whl
   name: nvidia-cuda-cupti
   version: 13.0.85
   sha256: 4eb01c08e859bf924d222250d2e8f8b8ff6d3db4721288cf35d14252a4d933c8
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cuda-nvrtc/nvidia_cuda_nvrtc-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cuda-nvrtc/nvidia_cuda_nvrtc-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
   name: nvidia-cuda-nvrtc
   version: 13.0.88
   sha256: ad9b6d2ead2435f11cbb6868809d2adeeee302e9bb94bcf0539c7a40d80e8575
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cuda-runtime/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cuda-runtime/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
   name: nvidia-cuda-runtime
   version: 13.0.96
   sha256: 7f82250d7782aa23b6cfe765ecc7db554bd3c2870c43f3d1821f1d18aebf0548
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cudnn-cu13/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cudnn-cu13/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl
   name: nvidia-cudnn-cu13
   version: 9.20.0.48
   sha256: 0c45dd8eeb50b603f07995b1b300c62ffe6a1980482b82b3bcf94a4ca9d49304
@@ -21748,7 +21718,7 @@ packages:
   requires_dist:
   - nvidia-cublas
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cufft/nvidia_cufft-12.0.0.61-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cufft/nvidia_cufft-12.0.0.61-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
   name: nvidia-cufft
   version: 12.0.0.61
   sha256: 6c44f692dce8fd5ffd3e3df134b6cdb9c2f72d99cf40b62c32dde45eea9ddad3
@@ -21756,19 +21726,19 @@ packages:
   requires_dist:
   - nvidia-nvjitlink
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cufile/nvidia_cufile-1.15.1.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cufile/nvidia_cufile-1.15.1.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
   name: nvidia-cufile
   version: 1.15.1.6
   sha256: 08a3ecefae5a01c7f5117351c64f17c7c62efa5fffdbe24fc7d298da19cd0b44
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-curand/nvidia_curand-10.4.0.35-py3-none-manylinux_2_27_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-curand/nvidia_curand-10.4.0.35-py3-none-manylinux_2_27_x86_64.whl
   name: nvidia-curand
   version: 10.4.0.35
   sha256: 1aee33a5da6e1db083fe2b90082def8915f30f3248d5896bcec36a579d941bfc
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cusolver/nvidia_cusolver-12.0.4.66-py3-none-manylinux_2_27_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cusolver/nvidia_cusolver-12.0.4.66-py3-none-manylinux_2_27_x86_64.whl
   name: nvidia-cusolver
   version: 12.0.4.66
   sha256: 0a759da5dea5c0ea10fd307de75cdeb59e7ea4fcb8add0924859b944babf1112
@@ -21778,7 +21748,7 @@ packages:
   - nvidia-nvjitlink
   - nvidia-cusparse
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cusparse/nvidia_cusparse-12.6.3.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cusparse/nvidia_cusparse-12.6.3.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
   name: nvidia-cusparse
   version: 12.6.3.3
   sha256: 2b3c89c88d01ee0e477cb7f82ef60a11a4bcd57b6b87c33f789350b59759360b
@@ -21786,48 +21756,48 @@ packages:
   requires_dist:
   - nvidia-nvjitlink
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-cusparselt-cu13/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-cusparselt-cu13/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl
   name: nvidia-cusparselt-cu13
   version: 0.8.1
   sha256: 786ce87568c303fadb5afcc7102d454cd3040d75f6f8626f5db460d1871f4dd0
   index: https://pypi.nvidia.com/
-- pypi: https://pypi.nvidia.com/nvidia-nccl-cu13/nvidia_nccl_cu13-2.29.7-py3-none-manylinux_2_18_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-nccl-cu13/nvidia_nccl_cu13-2.29.7-py3-none-manylinux_2_18_x86_64.whl
   name: nvidia-nccl-cu13
   version: 2.29.7
   sha256: edd81538446786ec3b73972543e53bb43bcaf0bfc8ef76cb679fcc390ffe136d
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-nvfatbin/nvidia_nvfatbin-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-nvfatbin/nvidia_nvfatbin-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl
   name: nvidia-nvfatbin
   version: 13.0.85
   sha256: 5e05287b34c02cb6a7c6d9bbb0bbe6da34665fad49878f30e3a722b4747eb676
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-nvjitlink/nvidia_nvjitlink-13.3.33-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-nvjitlink/nvidia_nvjitlink-13.3.33-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
   name: nvidia-nvjitlink
   version: 13.3.33
   sha256: 26a6de7fb4c8fdaa7703d3dad720d6d427ddfea5c48a528fd97c11733ad830e5
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-nvshmem-cu13/nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-nvshmem-cu13/nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
   name: nvidia-nvshmem-cu13
   version: 3.4.5
   sha256: 290f0a2ee94c9f3687a02502f3b9299a9f9fe826e6d0287ee18482e78d495b80
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-nvtx/nvidia_nvtx-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-nvtx/nvidia_nvtx-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl
   name: nvidia-nvtx
   version: 13.0.85
   sha256: 4936d1d6780fbe68db454f5e72a42ff64d1fd6397df9f363ae786930fd5c1cd4
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/nvidia-nvvm/nvidia_nvvm-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
+- pypi: https://pypi.nvidia.cn/nvidia-nvvm/nvidia_nvvm-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
   name: nvidia-nvvm
   version: 13.0.88
   sha256: c5f41ffeb6466944a026dfa5317d7d85355c119bbec279205d22f1869d1054e0
   index: https://pypi.nvidia.com/
   requires_python: '>=3'
-- pypi: https://pypi.nvidia.com/warp-lang/warp_lang-1.15.0-py3-none-manylinux_2_28_x86_64.whl
+- pypi: https://pypi.nvidia.cn/warp-lang/warp_lang-1.15.0-py3-none-manylinux_2_28_x86_64.whl
   name: warp-lang
   version: 1.15.0
   sha256: 95c169f28bd7d6c78ac4ad62e2df1e61a096033748f757157fa4551aed80d010

@@ -2,10 +2,14 @@
 # Copyright 2026
 # SPDX-License-Identifier: Apache-2.0
 
+import math
+
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import JointState
 from interactive_markers.interactive_marker_server import InteractiveMarkerServer
 from visualization_msgs.msg import (
     InteractiveMarker,
@@ -44,8 +48,11 @@ class TargetMarkerNode(Node):
         self.marker_description = self.declare_parameter(
             "marker_description", "Target Pose").value
         self.publish_before_first_feedback = bool(
-            self.declare_parameter("publish_before_first_feedback", True).value
+            self.declare_parameter("publish_before_first_feedback", False).value
         )
+        self.required_joint_state_topic = self.declare_parameter(
+            "required_joint_state_topic", ""
+        ).value
 
         # TF2 listener
         self.tf_buffer = Buffer()
@@ -55,6 +62,22 @@ class TargetMarkerNode(Node):
         self.target_pose_stamped = None
         self.server = None
         self.user_has_moved_marker = False
+        self.received_required_joint_state = False
+        self.pending_initial_pose = None
+        self.stable_initial_pose_samples = 0
+        self.joint_state_subscription = None
+
+        if self.required_joint_state_topic:
+            self.joint_state_subscription = self.create_subscription(
+                JointState,
+                self.required_joint_state_topic,
+                self.joint_state_callback,
+                qos_profile_sensor_data,
+            )
+            self.get_logger().info(
+                "Waiting for real joint state on "
+                f"{self.required_joint_state_topic} before marker initialization."
+            )
 
         # Publisher
         self.pose_publisher = self.create_publisher(PoseStamped, self.pose_topic, 10)
@@ -63,10 +86,23 @@ class TargetMarkerNode(Node):
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self.timer_callback)
         self.get_logger().info("TargetMarkerNode initialized. Waiting for TF to align marker...")
 
+    def joint_state_callback(self, message: JointState):
+        """Latch the first real joint-state timestamp used for TF alignment."""
+        if not self.received_required_joint_state and message.name:
+            self.received_required_joint_state = True
+            self.get_logger().info(
+                f"Received real joint state from {self.required_joint_state_topic}."
+            )
+
     def get_latest_ee_pose(self) -> PoseStamped:
-        """Lookup latest transform from base_frame to target_frame."""
+        """Lookup an end-effector transform backed by the required joint state."""
+        if (
+            self.required_joint_state_topic
+            and not self.received_required_joint_state
+        ):
+            return None
+
         try:
-            # Look up transform
             transform = self.tf_buffer.lookup_transform(
                 self.base_frame, self.target_frame, rclpy.time.Time()
             )
@@ -183,14 +219,53 @@ class TargetMarkerNode(Node):
         self.server.insert(int_marker, feedback_callback=self.process_feedback)
         self.server.applyChanges()
 
+    def initial_pose_is_stable(self, pose: PoseStamped) -> bool:
+        """Require a settled TF before creating the marker server."""
+        previous = self.pending_initial_pose
+        self.pending_initial_pose = pose
+        if previous is None:
+            self.stable_initial_pose_samples = 1
+            return False
+
+        position_delta = np.linalg.norm(
+            [
+                pose.pose.position.x - previous.pose.position.x,
+                pose.pose.position.y - previous.pose.position.y,
+                pose.pose.position.z - previous.pose.position.z,
+            ]
+        )
+        current_q = pose.pose.orientation
+        previous_q = previous.pose.orientation
+        quaternion_dot = abs(
+            current_q.x * previous_q.x
+            + current_q.y * previous_q.y
+            + current_q.z * previous_q.z
+            + current_q.w * previous_q.w
+        )
+        angular_delta = 2.0 * math.acos(min(1.0, quaternion_dot))
+
+        if position_delta <= 5.0e-4 and angular_delta <= 1.0e-3:
+            self.stable_initial_pose_samples += 1
+        else:
+            self.stable_initial_pose_samples = 1
+
+        return self.stable_initial_pose_samples >= 25
+
     def timer_callback(self):
         """Periodic timer callback to initialize or publish target pose."""
         if self.target_pose_stamped is None:
-            # We haven't initialized yet. Attempt to lookup the TF.
             current_pose = self.get_latest_ee_pose()
-            if current_pose is not None:
+            if (
+                current_pose is not None
+                and self.initial_pose_is_stable(current_pose)
+            ):
                 self.setup_interactive_marker(current_pose)
                 self.target_pose_stamped = current_pose
+                if not self.publish_before_first_feedback:
+                    self.get_logger().info(
+                        "Marker aligned to the current end-effector pose. "
+                        "Pose publication is armed only after user movement."
+                    )
         else:
             # We are initialized. Publish the current target pose.
             if not self.publish_before_first_feedback and not self.user_has_moved_marker:

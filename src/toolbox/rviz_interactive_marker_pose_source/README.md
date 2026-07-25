@@ -1,4 +1,9 @@
-# rviz_interactive_marker_teleop
+# rviz_interactive_marker_pose_source
+
+Low-level, embodiment-independent interactive-marker implementation. It owns
+one configurable marker node and its `PoseStamped` publishing behavior; it
+does not own robot profiles or RViz composition. Use the higher-level
+`rviz_marker_teleop` app for Marvin/Franka profile-based operation.
 
 RViz interactive-marker teleop **source**: drag a 6-DoF marker and publish
 `geometry_msgs/PoseStamped` targets. ROS 2 Jazzy.
@@ -22,13 +27,13 @@ Default output topic matches the EM pose contract:
 ## Launch
 
 ```bash
-ros2 launch rviz_interactive_marker_teleop teleop.launch.py
+ros2 launch rviz_interactive_marker_pose_source teleop.launch.py
 ```
 
 Common overrides:
 
 ```bash
-ros2 launch rviz_interactive_marker_teleop teleop.launch.py \
+ros2 launch rviz_interactive_marker_pose_source teleop.launch.py \
   pose_topic:=/action_sources/marker/pose_target \
   base_frame:=base_link \
   target_frame:=flange_link \

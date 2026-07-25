@@ -42,7 +42,7 @@ tasks stay limited to workspace lifecycle (`setup` / `build` / `test` /
 | Necessary | [`isaacteleop_toolbox`](https://github.com/Gabriel-Ning/isaacteleop_toolbox) | `src/teleop/…` via `repos/necessary.repos` |
 | Necessary | [`motion_planners`](https://github.com/Gabriel-Ning/motion_planners) | `src/motion_planning/motion_planners` via `repos/necessary.repos` |
 | Example 1 | Flat `runtime_resources` app packages | `src/apps/` via `repos/example.repos` |
-| Toolbox | `rviz_interactive_marker_teleop` | Workspace-owned at `src/toolbox/` |
+| Toolbox | `rviz_interactive_marker_pose_source` | Workspace-owned at `src/toolbox/` |
 | Embodiment | [`marvin_description`](https://github.com/Gabriel-Ning/marvin_description) (`dev`) | `src/embodiments/robots/marvin/…` via `repos/embodiment.repos` |
 | Embodiment | [`marvin_hardware_interface`](https://github.com/Gabriel-Ning/marvin_hardware_interface) | `src/embodiments/robots/marvin/…` via `repos/embodiment.repos` |
 

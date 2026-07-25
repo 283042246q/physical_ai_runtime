@@ -189,7 +189,7 @@ Current evidence:
   session);
 - first closed loop composed in `src/apps/marvin_controller_bringup`, made
   bimanual: two independent chains, one per arm --
-  `rviz_interactive_marker_teleop` (`target_marker_left`/`_right`) ->
+  `rviz_interactive_marker_pose_source` (`target_marker_left`/`_right`) ->
   `manipulation_execution_manager` (`em_left`/`em_right`) ->
   `TaskSpaceKinematicPositionController`
   (`left_task_space_kinematic_position_controller`/`right_...`) ->
@@ -276,8 +276,8 @@ Pixi. Migration still lands one closed loop at a time.
 
 Current evidence (partial):
 
-- `rviz_interactive_marker_teleop` migrated under
-  `src/toolbox/rviz_interactive_marker_teleop` as a pure PoseStamped source;
+- `rviz_interactive_marker_pose_source` migrated under
+  `src/toolbox/rviz_interactive_marker_pose_source` as a pure PoseStamped source;
 - Piper-specific RViz bringup removed from the package launch; apps compose
   RViz and embodiment frames;
 - default output topic aligned to the EM pose contract
