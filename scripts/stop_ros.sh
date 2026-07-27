@@ -12,9 +12,11 @@ patterns=(
   "controller_manager/hardware_spawner"
   "robot_state_publisher"
   "rviz2"
+  "plotjuggler"
   "execution_manager"
   "target_marker_node"
   "joint_state_publisher"
+  "pyroki_global_setpoint_planner"
 )
 
 stopped_any=0

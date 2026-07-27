@@ -101,6 +101,8 @@ ros-jazzy-joy-linux = ">=3.3.0,<4"
 # ── Recording / visualization / debug ────────────────────────────────────────
 ros-jazzy-episode-recorder = "==0.3.0"
 ros-jazzy-foxglove-bridge = "*"
+# Time-series debug outside RViz (ROS topic streaming plugins included).
+ros-jazzy-plotjuggler-ros = "*"
 ros-jazzy-rqt-action = ">=2.2.0,<3"
 filelock = "*"
 
@@ -135,6 +137,8 @@ clean = "rm -rf build install log"
 # controller_manager, rviz, ...) from a `ros2 launch` that wasn't cleanly
 # Ctrl-C'd. Safe to run with nothing running.
 stop = "bash scripts/stop_ros.sh"
+# Time-series inspector (alongside / instead of RViz). Same ROS_DOMAIN_ID.
+pj = "ros2 run plotjuggler plotjuggler"
 
 # ── GPU feature (default environment) ────────────────────────────────────────
 #
