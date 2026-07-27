@@ -41,9 +41,11 @@ curl -fsSL https://pixi.sh/install.sh | bash
 ### 1. Clone the workspace template
 
 ```bash
-git clone git@github.com:Gabriel-Ning/physical_ai_runtime.git
+git clone https://github.com/Gabriel-Ning/physical_ai_runtime.git
 cd physical_ai_runtime
 ```
+
+Use HTTPS (not SSH) for cloning.
 
 ### 2. Initialize the environment
 
