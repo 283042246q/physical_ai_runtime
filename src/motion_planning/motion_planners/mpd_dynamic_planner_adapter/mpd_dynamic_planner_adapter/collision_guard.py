@@ -168,7 +168,16 @@ def splice_collision_plans(
     prefix_dt_s: float,
 ) -> TimedCollisionPlan:
     if active is None:
-        return new
+        prefix_times = np.asarray([commit_start_unix_s, handoff_unix_s])
+        prefix_positions = np.repeat(new.sphere_positions[:1], 2, axis=0)
+        keep = new.absolute_times_s > handoff_unix_s + 1e-9
+        return TimedCollisionPlan(
+            absolute_times_s=np.concatenate((prefix_times, new.absolute_times_s[keep])),
+            sphere_positions=np.concatenate(
+                (prefix_positions, new.sphere_positions[keep]), axis=0
+            ),
+            sphere_radii=new.sphere_radii,
+        )
     count = max(2, int(math.ceil((handoff_unix_s - commit_start_unix_s) / prefix_dt_s)) + 1)
     prefix_times = np.linspace(commit_start_unix_s, handoff_unix_s, count)
     prefix_positions = active.sample(prefix_times)
