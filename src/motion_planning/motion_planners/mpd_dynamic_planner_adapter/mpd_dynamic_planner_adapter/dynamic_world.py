@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import threading
+import time
 from typing import Any
 
 import numpy as np
@@ -190,11 +191,12 @@ class DynamicWorldManager:
         prediction_horizon_s: float = 12.0,
         max_objects: int = 16,
         initial_velocity_std_m_s: float = 0.25,
-        process_acceleration_std_m_s2: float = 0.25,
+        process_acceleration_std_m_s2: float = 0.01,
         default_position_std_m: float = 0.01,
         default_inflation_mode: str = "covariance",
         default_base_inflation_m: float = 0.01,
         default_horizon_inflation_rate_m_s: float = 0.01,
+        initial_version: int | None = None,
     ) -> None:
         if prediction_horizon_s <= 0.0 or max_objects < 1:
             raise ValueError("prediction horizon and max_objects must be positive")
@@ -208,7 +210,7 @@ class DynamicWorldManager:
         self.default_base_inflation_m = float(default_base_inflation_m)
         self.default_horizon_inflation_rate_m_s = float(default_horizon_inflation_rate_m_s)
         self._tracks: dict[str, _Track] = {}
-        self._version = 0
+        self._version = time.time_ns() if initial_version is None else int(initial_version)
         self._snapshot: DynamicWorldSnapshot | None = None
         self._lock = threading.Lock()
 

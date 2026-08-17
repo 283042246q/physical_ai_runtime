@@ -70,3 +70,34 @@ def test_braking_plan_reaches_zero_velocity_continuously():
         right.time_from_start_s - left.time_from_start_s
         for left, right in zip(plan.points, plan.points[1:])
     ) <= 0.0500001
+
+
+def test_no_low_speed_candidate_returns_no_handoff():
+    result = TrajectoryPlanResult(
+        valid=True,
+        joint_names=NAMES,
+        points=[
+            TrajectoryPlanPoint([0.0] * 7, [0.4] * 7, 0.0),
+            TrajectoryPlanPoint([0.2] * 7, [0.4] * 7, 1.0),
+            TrajectoryPlanPoint([0.4] * 7, [0.4] * 7, 2.0),
+        ],
+    )
+    active = TimedPlan(result, 10.0)
+    collision = TimedCollisionPlan(
+        absolute_times_s=np.asarray([10.0, 11.0, 12.0]),
+        sphere_positions=np.zeros((3, 1, 3)),
+        sphere_radii=np.asarray([0.05]),
+    )
+    world = DynamicWorldSnapshot(1, "fr3_link0", 10_000_000_000, 13_000_000_000, ())
+    choice = select_earliest_low_speed_handoff(
+        active_plan=active,
+        collision_plan=collision,
+        world=world,
+        guard=DynamicTrajectoryGuard(),
+        now_unix_s=10.0,
+        earliest_unix_s=10.5,
+        latest_unix_s=12.0,
+        max_speed_rad_s=0.2,
+    )
+    assert choice.handoff_unix_s is None
+    assert choice.reason == "no_dynamic_safe_low_speed_handoff"

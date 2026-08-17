@@ -101,7 +101,7 @@ class DynamicTrajectoryGuard:
         *,
         check_dt_s: float = 0.02,
         covariance_sigma: float = 3.0,
-        process_acceleration_std_m_s2: float = 0.25,
+        process_acceleration_std_m_s2: float = 0.01,
         minimum_clearance_m: float = 0.0,
     ) -> None:
         if check_dt_s <= 0.0:

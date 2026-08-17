@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import mpd_dynamic_planner_adapter.dynamic_world as dynamic_world_module
 from mpd_dynamic_planner_adapter.dynamic_world import (
     DynamicWorldError,
     DynamicWorldManager,
@@ -24,6 +25,7 @@ def test_constant_velocity_filter_and_worker_snapshot_contract():
         prediction_horizon_s=12.0,
         initial_velocity_std_m_s=2.0,
         process_acceleration_std_m_s2=0.01,
+        initial_version=0,
     )
     first = manager.update(_observation(1_000_000_000, 0.0))
     second = manager.update(_observation(2_000_000_000, 1.0))
@@ -37,8 +39,15 @@ def test_constant_velocity_filter_and_worker_snapshot_contract():
     assert len(worker["objects"][0]["covariance_6x6"]) == 36
 
 
-def test_orientation_updates_but_future_model_has_no_angular_velocity():
+def test_default_version_namespace_survives_ros_node_restart(monkeypatch):
+    monkeypatch.setattr(dynamic_world_module.time, "time_ns", lambda: 123_000)
     manager = DynamicWorldManager()
+    snapshot = manager.update(_observation(1_000_000_000, 0.0))
+    assert snapshot.version == 123_001
+
+
+def test_orientation_updates_but_future_model_has_no_angular_velocity():
+    manager = DynamicWorldManager(initial_version=0)
     manager.update(_observation(1_000_000_000, 0.0))
     snapshot = manager.update(
         _observation(
@@ -54,7 +63,7 @@ def test_orientation_updates_but_future_model_has_no_angular_velocity():
 
 
 def test_local_sdf_identity_cannot_change_and_time_cannot_reverse():
-    manager = DynamicWorldManager()
+    manager = DynamicWorldManager(initial_version=0)
     manager.update(_observation(2_000_000_000, 0.0))
     with pytest.raises(DynamicWorldError, match="local_sdf"):
         manager.update(

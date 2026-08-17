@@ -113,7 +113,7 @@ class MpdDynamicReplanNode(Node):
             "guard_check_dt_s": 0.02,
             "guard_minimum_clearance_m": 0.0,
             "covariance_sigma": 3.0,
-            "process_acceleration_std_m_s2": 0.25,
+            "process_acceleration_std_m_s2": 0.01,
             "max_dynamic_objects": 16,
             "brake_max_deceleration_rad_s2": 1.0,
             "brake_minimum_duration_s": 0.20,
@@ -267,7 +267,6 @@ class MpdDynamicReplanNode(Node):
             self.get_logger().warning(f"ignored invalid dynamic world: {error}")
             return
         self._world_received_monotonic = time.monotonic()
-        self._braking = False
         self.get_logger().debug(f"accepted dynamic world version {snapshot.version}")
 
     def _on_pose_target(self, message: PoseStamped) -> None:
@@ -438,6 +437,34 @@ class MpdDynamicReplanNode(Node):
         handoff = job.handoff_unix_ns * 1e-9
         new_collision = collision_plan_from_result(result, handoff)
         commit_start = time.time() + self._command_lead_s
+        if self._plan_only:
+            try:
+                risk = self._guard.validate(
+                    new_collision,
+                    latest_world,
+                    handoff,
+                    float(new_collision.absolute_times_s[-1]),
+                )
+            except ValueError as error:
+                self._counters["world_revalidation_rejected"] += 1
+                self.get_logger().warning(
+                    f"plan-only latest-world validation failed: {error}"
+                )
+                return False
+            current_world = self._world_manager.snapshot
+            if (
+                not risk.safe
+                or current_world is None
+                or current_world.version != latest_world.version
+            ):
+                self._counters["world_revalidation_rejected"] += 1
+                return False
+            # plan_only does not pretend that the unexecuted trajectory is the
+            # robot's active command.  Every cycle starts from measured state.
+            self._trajectory_publisher.publish(
+                self._to_message(result, job.handoff_unix_ns)
+            )
+            return True
         try:
             merged = splice_for_handoff(
                 current_state=self._state,
@@ -470,11 +497,6 @@ class MpdDynamicReplanNode(Node):
             self._counters["world_revalidation_rejected"] += 1
             self._controlled_brake("latest_world_revalidation_failed", clear_target=True)
             return False
-        if self._plan_only:
-            self._active_plan = TimedPlan(result, handoff)
-            self._active_collision_plan = new_collision
-            self._trajectory_publisher.publish(self._to_message(result, job.handoff_unix_ns))
-            return True
         message = self._to_message(merged, int(commit_start * 1e9))
         self._trajectory_publisher.publish(message)
         if self._execution is None or not self._execution.submit(job.generation, message):

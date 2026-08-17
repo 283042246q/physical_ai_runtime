@@ -60,8 +60,9 @@ class DynamicWorldDemoNode(Node):
                             0.0,
                             0.0001,
                         ],
-                        "inflation_mode": "covariance",
+                        "inflation_mode": "linear",
                         "base_inflation_m": 0.01,
+                        "horizon_inflation_rate_m_s": 0.005,
                     }
                 ],
             },

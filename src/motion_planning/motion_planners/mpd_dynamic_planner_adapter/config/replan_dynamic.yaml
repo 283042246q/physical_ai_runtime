@@ -31,7 +31,7 @@ mpd_dynamic_replanner:
     guard_check_dt_s: 0.02
     guard_minimum_clearance_m: 0.0
     covariance_sigma: 3.0
-    process_acceleration_std_m_s2: 0.25
+    process_acceleration_std_m_s2: 0.01
     max_dynamic_objects: 16
     brake_max_deceleration_rad_s2: 1.0
     brake_minimum_duration_s: 0.20

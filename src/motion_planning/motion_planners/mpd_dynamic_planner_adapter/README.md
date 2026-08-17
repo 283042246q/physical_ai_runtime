@@ -48,11 +48,19 @@ ros2 launch mpd_dynamic_planner_adapter \
 '
 ```
 
+For a non-executing multi-cycle check, change the same launch argument to
+`plan_only:=true`. In that mode every cycle starts from measured JointState and
+publishes only the accepted result; an unexecuted result is deliberately not
+stored as the active trajectory.
+
 Observation topic: `/mpd/dynamic_world_observations` (`std_msgs/msg/String`).
 Each JSON message is a complete known-object snapshot in `fr3_link0`; absent
 objects become inactive. The node estimates `[position, velocity]` with one CV
 Kalman filter per object and uploads an immutable, monotonically versioned
-snapshot. Future orientation is held constant.
+snapshot. Future orientation is held constant. The default process acceleration
+standard deviation is `0.01 m/s^2`; it is only a fake-hardware-safe starting
+point and must be calibrated from the deployed tracker's residuals. Inflation
+can use propagated covariance or a configured linear horizon envelope.
 
 Safety behavior:
 
