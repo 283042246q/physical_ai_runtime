@@ -1,0 +1,123 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_topic_button_panel/EmptyTopicButtonPanel
+    Name: Motion Planning
+    Description: Drag trajectory targets, then plan and execute
+    Button 1 Label: Plan
+    Button 1 Topic: /motion_planning/plan
+    Button 2 Label: Execute
+    Button 2 Topic: /motion_planning/execute
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Plane: XY
+      Value: true
+    - Class: rviz_default_plugins/RobotModel
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+      Enabled: true
+      Name: RobotModel
+      Value: true
+    - Class: rviz_default_plugins/InteractiveMarkers
+      Enabled: true
+      Name: Planned Targets
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /motion_planning_targets/update
+      Value: true
+    - Class: rviz_default_plugins/InteractiveMarkers
+      Enabled: true
+      Name: Left Streaming Target
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /motion_planning_left_target/update
+      Value: true
+    - Class: rviz_default_plugins/InteractiveMarkers
+      Enabled: true
+      Name: Right Streaming Target
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /motion_planning_right_target/update
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /motion_planning/trajectory_left
+      Name: Left Planned Path
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /motion_planning/trajectory_right
+      Name: Right Planned Path
+      Value: true
+    - Class: rviz_default_plugins/PoseArray
+      Enabled: true
+      Shape: Axes
+      Axes Length: 0.08
+      Axes Radius: 0.008
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /motion_planning/trajectory_poses_left
+      Name: Left Planned Poses
+      Value: true
+    - Class: rviz_default_plugins/PoseArray
+      Enabled: true
+      Shape: Axes
+      Axes Length: 0.08
+      Axes Radius: 0.008
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /motion_planning/trajectory_poses_right
+      Name: Right Planned Poses
+      Value: true
+  Enabled: true
+  Global Options:
+    Fixed Frame: world
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 2.5
+      Name: Orbit
+      Target Frame: world
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1400

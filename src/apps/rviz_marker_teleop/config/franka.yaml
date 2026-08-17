@@ -1,0 +1,15 @@
+rviz:
+  package: rviz_marker_teleop
+  config: rviz/franka.rviz
+
+markers:
+  - name: franka
+    base_frame: fr3_link0
+    target_frame: fr3_link8
+    pose_topic: /action_sources/marker/pose_target
+    publish_frequency: 50.0
+    publish_before_first_feedback: false
+    required_joint_state_topic: /franka/joint_states
+    server_namespace: target_marker_franka
+    marker_name: franka_target
+    marker_description: Franka Target Pose

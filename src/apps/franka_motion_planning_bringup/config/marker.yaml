@@ -1,0 +1,15 @@
+rviz:
+  package: rviz_marker_teleop
+  config: rviz/franka.rviz
+
+markers:
+  - name: franka_planning
+    base_frame: fr3_link0
+    target_frame: fr3_link8
+    pose_topic: /teleop/pose_franka
+    publish_frequency: 30.0
+    publish_before_first_feedback: false
+    required_joint_state_topic: /franka/joint_states
+    server_namespace: franka_motion_planning_target
+    marker_name: franka_planning_target
+    marker_description: Franka Ruckig Planning Target

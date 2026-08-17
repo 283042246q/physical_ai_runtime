@@ -1,0 +1,35 @@
+# Unified FR3 execution profile. The current execution manager normalizes and
+# forwards contracts; ros2_control route activation is handled by bringup.
+execution_manager:
+  ros__parameters:
+    joint_names: "fr3_joint1,fr3_joint2,fr3_joint3,fr3_joint4,fr3_joint5,fr3_joint6,fr3_joint7"
+
+    source_namespace: "/action_sources"
+    sources: >-
+      {"marker":{"producer_class":"teleop",
+                 "priority":100,
+                 "inactive_timeout_s":0.2,
+                 "pose_contracts":["pose_target","pose_chunk"],
+                 "twist_contracts":["twist_target"]},
+       "motion_planner":{"producer_class":"streaming_planner",
+                         "priority":20,
+                         "inactive_timeout_s":0.5},
+       "policy":{"producer_class":"policy",
+                 "priority":10,
+                 "inactive_timeout_s":0.5},
+       "trajectory_test":{"producer_class":"trajectory_planner",
+                          "priority":50,
+                          "inactive_timeout_s":0.5,
+                          "goal_contracts":["joint_trajectory_goal"]}}
+
+    output_topic: "/execution_manager/franka_arm/joint_position_reference"
+    pose_output_topic: "/execution_manager/franka_arm/cartesian_pose_reference"
+    pose_chunk_output_topic: "/execution_manager/franka_arm/cartesian_pose_chunk_reference"
+    twist_output_topic: "/execution_manager/franka_arm/cartesian_twist_reference"
+    jtc_action_name: "/franka_arm_jtc/follow_joint_trajectory"
+    status_topic: "/execution_manager/status"
+    dispatch_metadata_topic: "/execution_manager/dispatch_metadata"
+
+    status_rate_hz: 2.0
+    stale_timeout_s: 0.5
+    max_future_s: 0.1

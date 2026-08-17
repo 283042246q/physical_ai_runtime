@@ -1,0 +1,66 @@
+# ros2_control profile for the Physical AI Runtime FR3 effort path.
+# pose → Diff-IK → joint impedance → <joint>/effort
+# Velocity MG path is not shipped; use effort (TSJI).
+controller_manager:
+  ros__parameters:
+    update_rate: 1000
+    thread_priority: 98
+    overruns:
+      manage: false
+      print_warnings: false
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    franka_robot_state_broadcaster:
+      type: franka_robot_state_broadcaster/FrankaRobotStateBroadcaster
+      state_interfaces: [robot_state]
+
+    task_space_joint_impedance_controller:
+      type: manipulation_position_controllers/TaskSpaceJointImpedanceController
+
+joint_state_broadcaster:
+  ros__parameters:
+    publish_rate: 100.0
+
+franka_robot_state_broadcaster:
+  ros__parameters:
+    convenience_publish_rate: 100
+
+task_space_joint_impedance_controller:
+  ros__parameters:
+    joints:
+      - fr3_joint1
+      - fr3_joint2
+      - fr3_joint3
+      - fr3_joint4
+      - fr3_joint5
+      - fr3_joint6
+      - fr3_joint7
+
+    base_frame: fr3_link0
+    tip_frame: fr3_link8
+    pose_topic: /task_space_joint_impedance_controller/pose_reference
+
+    stale_timeout_s: 0.2
+    max_joint_velocity_rad_s: 1.5
+    max_linear_velocity_m_s: 0.5
+    max_angular_velocity_rad_s: 1.0
+    status_rate_hz: 10.0
+    robot_time_interface: fr3/robot_time
+    velocity_filter_alpha: 0.99
+
+    solver:
+      backend: osqp
+      position_gain: 4.0
+      orientation_gain: 1.0
+      damping: 0.05
+      posture_weight: 1.0e-3
+      max_iterations: 1
+
+    kp_stiffness: [600.0, 600.0, 600.0, 600.0, 250.0, 150.0, 50.0]
+    kd_damping: [30.0, 30.0, 30.0, 30.0, 10.0, 10.0, 5.0]
+    max_torques: [87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0]
+    max_torque_rates: [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
+
+    lower_limits: [-2.9007, -1.8361, -2.9007, -3.0770, -2.8763, 0.4398, -3.0508]
+    upper_limits: [ 2.9007,  1.8361,  2.9007, -0.1169,  2.8763, 4.6216,  3.0508]

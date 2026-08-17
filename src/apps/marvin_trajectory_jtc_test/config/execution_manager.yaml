@@ -1,0 +1,16 @@
+trajectory_test_em:
+  ros__parameters:
+    joint_names: "Joint1_L,Joint2_L,Joint3_L,Joint4_L,Joint5_L,Joint6_L,Joint7_L"
+    source_namespace: "/action_sources"
+    sources: >-
+      {"trajectory_test":{"priority":100,
+                            "inactive_timeout_s":5.0,
+                            "goal_contracts":["joint_trajectory_goal"]}}
+    jtc_action_name: "/left_arm_controller/follow_joint_trajectory"
+    status_topic: "/execution_manager/trajectory_test_status"
+    status_rate_hz: 10.0
+    stale_timeout_s: 1.0
+    max_future_s: 0.1
+    reject_zero_stamped_references: false
+    joint_limits_lower: "-2.9671,-2.0944,-2.9671,-2.5307,-2.9671,-1.0472,-1.5708"
+    joint_limits_upper: "2.9671,2.0944,2.9671,1.0472,2.9671,1.0472,1.5708"

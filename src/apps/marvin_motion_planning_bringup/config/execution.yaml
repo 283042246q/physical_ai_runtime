@@ -1,0 +1,41 @@
+em_left:
+  ros__parameters:
+    joint_names: "Joint1_L,Joint2_L,Joint3_L,Joint4_L,Joint5_L,Joint6_L,Joint7_L"
+    source_namespace: "/action_sources"
+    sources: '{"motion_planner_left": {"priority": 10, "goal_contracts": ["joint_trajectory_goal"]}}'
+    output_topic: "/left_arm_jspc/joint_reference"
+    pose_output_topic: "/em_left/pose_reference"
+    pose_chunk_output_topic: "/em_left/pose_chunk_reference"
+    twist_output_topic: "/em_left/twist_reference"
+    jtc_action_name: "/left_arm_jtc/follow_joint_trajectory"
+    status_topic: "/em_left/status"
+    status_rate_hz: 2.0
+    stale_timeout_s: 0.5
+    max_future_s: 0.1
+    reject_zero_stamped_references: false
+    arm_to_active_count: 1
+    degraded_to_active_count: 3
+    min_hold_duration_s: 0.05
+    joint_limits_lower: "-2.9671,-2.0944,-2.9671,-2.5307,-2.9671,-1.0472,-1.5708"
+    joint_limits_upper: "2.9671,2.0944,2.9671,1.0472,2.9671,1.0472,1.5708"
+
+em_right:
+  ros__parameters:
+    joint_names: "Joint1_R,Joint2_R,Joint3_R,Joint4_R,Joint5_R,Joint6_R,Joint7_R"
+    source_namespace: "/action_sources"
+    sources: '{"motion_planner_right": {"priority": 10, "goal_contracts": ["joint_trajectory_goal"]}}'
+    output_topic: "/right_arm_jspc/joint_reference"
+    pose_output_topic: "/em_right/pose_reference"
+    pose_chunk_output_topic: "/em_right/pose_chunk_reference"
+    twist_output_topic: "/em_right/twist_reference"
+    jtc_action_name: "/right_arm_jtc/follow_joint_trajectory"
+    status_topic: "/em_right/status"
+    status_rate_hz: 2.0
+    stale_timeout_s: 0.5
+    max_future_s: 0.1
+    reject_zero_stamped_references: false
+    arm_to_active_count: 1
+    degraded_to_active_count: 3
+    min_hold_duration_s: 0.05
+    joint_limits_lower: "-2.9671,-2.0944,-2.9671,-2.5307,-2.9671,-1.0472,-1.5708"
+    joint_limits_upper: "2.9671,2.0944,2.9671,1.0472,2.9671,1.0472,1.5708"

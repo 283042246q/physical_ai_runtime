@@ -1,0 +1,38 @@
+arms:
+  left:
+    enabled: true
+    target:
+      link_name: flange_L
+      pose_topic: /teleop/pose_left
+    planning:
+      mode: online_mpc
+      backend:
+        name: pyroki
+        parameters:
+          load_meshes: true
+          step_rate_hz: 30.0
+          max_state_age_s: 0.05
+          target_stale_timeout_s: 0.2
+          horizon_steps: 5
+
+  right:
+    enabled: false
+    target:
+      link_name: flange_R
+      pose_topic: /teleop/pose_right
+    planning:
+      mode: online_mpc
+      backend:
+        name: pyroki
+        parameters:
+          load_meshes: true
+          step_rate_hz: 30.0
+          max_state_age_s: 0.05
+          target_stale_timeout_s: 0.2
+          horizon_steps: 5
+
+# Reserved schema. Enabling this group fails fast until the planner contracts,
+# command sink, execution manager, and controller path support atomic bimanual plans.
+groups:
+  bimanual:
+    enabled: false

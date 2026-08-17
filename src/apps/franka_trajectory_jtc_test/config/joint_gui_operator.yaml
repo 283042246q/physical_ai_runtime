@@ -1,0 +1,16 @@
+joint_target_gui:
+  ros__parameters:
+    joint_state_topic: /franka/joint_states
+    output_contract: joint_trajectory_goal
+    goal_topic: /action_sources/joint_gui/joint_trajectory_goal
+    move_duration_s: 0.5
+    publish_rate_hz: 20.0
+    use_gui: true
+    sync_on_start: true
+    auto_send: false
+    auto_send_rate_hz: 10.0
+    # stream: repeat current slider targets; sine: oscillate one joint.
+    auto_send_mode: stream
+    auto_send_joint_index: 3
+    auto_send_amplitude_rad: 0.10
+    auto_send_period_s: 4.0

@@ -1,0 +1,23 @@
+# Execution manager profile for Marvin's RIGHT arm (RViz debug pipeline).
+#
+# Single source ("marker_right") on the pose_target contract. Node name must
+# be em_right -- see rviz_debug_bringup.launch.py, which instantiates this
+# package's executable directly with name="em_right" (bypassing its own
+# launch file, which hardcodes name="execution_manager" and cannot run two
+# differently-named instances from one launch file).
+em_right:
+  ros__parameters:
+    joint_names: "Joint1_R,Joint2_R,Joint3_R,Joint4_R,Joint5_R,Joint6_R,Joint7_R"
+
+    source_namespace: "/action_sources"
+    sources: >-
+      {"marker_right":{"priority":100,
+                  "inactive_timeout_s":0.5,
+                  "pose_contracts":["pose_target"]}}
+
+    pose_output_topic: "/position_controller/right_pose_reference"
+    status_topic: "/execution_manager/right_status"
+
+    status_rate_hz: 2.0
+    stale_timeout_s: 0.5
+    max_future_s: 0.1

@@ -1,0 +1,22 @@
+# Joint GUI → EM joint_target streaming → /franka_arm_jspc/joint_reference.
+execution_manager:
+  ros__parameters:
+    joint_names: "fr3_joint1,fr3_joint2,fr3_joint3,fr3_joint4,fr3_joint5,fr3_joint6,fr3_joint7"
+
+    source_namespace: "/action_sources"
+    sources: >-
+      {"joint_gui":{"priority":10,
+                     "inactive_timeout_s":1.0}}
+
+    output_topic: "/franka_arm_jspc/joint_reference"
+    status_topic: "/execution_manager/joint_gui_status"
+    status_rate_hz: 10.0
+    stale_timeout_s: 1.0
+    max_future_s: 0.1
+    reject_zero_stamped_references: false
+    arm_to_active_count: 1
+    degraded_to_active_count: 3
+    min_hold_duration_s: 0.05
+
+    joint_limits_lower: "-2.9007,-1.8361,-2.9007,-3.0770,-2.8763,0.4398,-3.0508"
+    joint_limits_upper: "2.9007,1.8361,2.9007,-0.1169,2.8763,4.6216,3.0508"

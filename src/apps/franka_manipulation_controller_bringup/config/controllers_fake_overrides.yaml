@@ -1,0 +1,10 @@
+# mock_components does not export Franka's custom robot_time state interface.
+# Keep the real-hardware profile strict and disable only this optional claim
+# for fake-hardware validation.
+franka_arm_tsjic:
+  ros__parameters:
+    robot_time_interface: ""
+
+franka_arm_jsic:
+  ros__parameters:
+    robot_time_interface: ""

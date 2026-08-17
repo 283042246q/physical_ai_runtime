@@ -1,0 +1,444 @@
+# First production application contract for the generic recorder.
+# Cameras match hik_camera/config/multi_camera_60.yaml: eight synchronized
+# test_camera_1..8 streams at 640x480@60. Robot topics match
+# marvin_controller_bringup. Optional input streams may be absent at start.
+streams:
+  - id: test_camera_1_image
+    label: camera.test_camera_1.image
+    role: camera_image
+    topic: /cameras/test_camera_1/image_raw
+    expected_type: sensor_msgs/msg/Image
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health:
+      expected_rate_hz: 60.0
+      min_rate_ratio: 0.90
+      max_gap_s: 0.20
+      recorder_drop_policy: fail
+      duration_overrides:
+        - max_duration_s: 5.0
+          min_rate_ratio: 0.70
+          max_gap_s: 0.30
+
+  - id: test_camera_1_info
+    label: camera.test_camera_1.info
+    role: camera_info
+    topic: /cameras/test_camera_1/camera_info
+    expected_type: sensor_msgs/msg/CameraInfo
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_1_metadata
+    label: camera.test_camera_1.metadata
+    role: frame_metadata
+    topic: /cameras/test_camera_1/metadata
+    expected_type: hik_camera_msg/msg/FrameMetadata
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_2_image
+    label: camera.test_camera_2.image
+    role: camera_image
+    topic: /cameras/test_camera_2/image_raw
+    expected_type: sensor_msgs/msg/Image
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health:
+      expected_rate_hz: 60.0
+      min_rate_ratio: 0.90
+      max_gap_s: 0.20
+      recorder_drop_policy: fail
+      duration_overrides:
+        - max_duration_s: 5.0
+          min_rate_ratio: 0.70
+          max_gap_s: 0.30
+
+  - id: test_camera_2_info
+    label: camera.test_camera_2.info
+    role: camera_info
+    topic: /cameras/test_camera_2/camera_info
+    expected_type: sensor_msgs/msg/CameraInfo
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_2_metadata
+    label: camera.test_camera_2.metadata
+    role: frame_metadata
+    topic: /cameras/test_camera_2/metadata
+    expected_type: hik_camera_msg/msg/FrameMetadata
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_3_image
+    label: camera.test_camera_3.image
+    role: camera_image
+    topic: /cameras/test_camera_3/image_raw
+    expected_type: sensor_msgs/msg/Image
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health:
+      expected_rate_hz: 60.0
+      min_rate_ratio: 0.90
+      max_gap_s: 0.20
+      recorder_drop_policy: fail
+      duration_overrides:
+        - max_duration_s: 5.0
+          min_rate_ratio: 0.70
+          max_gap_s: 0.30
+
+  - id: test_camera_3_info
+    label: camera.test_camera_3.info
+    role: camera_info
+    topic: /cameras/test_camera_3/camera_info
+    expected_type: sensor_msgs/msg/CameraInfo
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_3_metadata
+    label: camera.test_camera_3.metadata
+    role: frame_metadata
+    topic: /cameras/test_camera_3/metadata
+    expected_type: hik_camera_msg/msg/FrameMetadata
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_4_image
+    label: camera.test_camera_4.image
+    role: camera_image
+    topic: /cameras/test_camera_4/image_raw
+    expected_type: sensor_msgs/msg/Image
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health:
+      expected_rate_hz: 60.0
+      min_rate_ratio: 0.90
+      max_gap_s: 0.20
+      recorder_drop_policy: fail
+      duration_overrides:
+        - max_duration_s: 5.0
+          min_rate_ratio: 0.70
+          max_gap_s: 0.30
+
+  - id: test_camera_4_info
+    label: camera.test_camera_4.info
+    role: camera_info
+    topic: /cameras/test_camera_4/camera_info
+    expected_type: sensor_msgs/msg/CameraInfo
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_4_metadata
+    label: camera.test_camera_4.metadata
+    role: frame_metadata
+    topic: /cameras/test_camera_4/metadata
+    expected_type: hik_camera_msg/msg/FrameMetadata
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_5_image
+    label: camera.test_camera_5.image
+    role: camera_image
+    topic: /cameras/test_camera_5/image_raw
+    expected_type: sensor_msgs/msg/Image
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health:
+      expected_rate_hz: 60.0
+      min_rate_ratio: 0.90
+      max_gap_s: 0.20
+      recorder_drop_policy: fail
+      duration_overrides:
+        - max_duration_s: 5.0
+          min_rate_ratio: 0.70
+          max_gap_s: 0.30
+
+  - id: test_camera_5_info
+    label: camera.test_camera_5.info
+    role: camera_info
+    topic: /cameras/test_camera_5/camera_info
+    expected_type: sensor_msgs/msg/CameraInfo
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_5_metadata
+    label: camera.test_camera_5.metadata
+    role: frame_metadata
+    topic: /cameras/test_camera_5/metadata
+    expected_type: hik_camera_msg/msg/FrameMetadata
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_6_image
+    label: camera.test_camera_6.image
+    role: camera_image
+    topic: /cameras/test_camera_6/image_raw
+    expected_type: sensor_msgs/msg/Image
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health:
+      expected_rate_hz: 60.0
+      min_rate_ratio: 0.90
+      max_gap_s: 0.20
+      recorder_drop_policy: fail
+      duration_overrides:
+        - max_duration_s: 5.0
+          min_rate_ratio: 0.70
+          max_gap_s: 0.30
+
+  - id: test_camera_6_info
+    label: camera.test_camera_6.info
+    role: camera_info
+    topic: /cameras/test_camera_6/camera_info
+    expected_type: sensor_msgs/msg/CameraInfo
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_6_metadata
+    label: camera.test_camera_6.metadata
+    role: frame_metadata
+    topic: /cameras/test_camera_6/metadata
+    expected_type: hik_camera_msg/msg/FrameMetadata
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_7_image
+    label: camera.test_camera_7.image
+    role: camera_image
+    topic: /cameras/test_camera_7/image_raw
+    expected_type: sensor_msgs/msg/Image
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health:
+      expected_rate_hz: 60.0
+      min_rate_ratio: 0.90
+      max_gap_s: 0.20
+      recorder_drop_policy: fail
+      duration_overrides:
+        - max_duration_s: 5.0
+          min_rate_ratio: 0.70
+          max_gap_s: 0.30
+
+  - id: test_camera_7_info
+    label: camera.test_camera_7.info
+    role: camera_info
+    topic: /cameras/test_camera_7/camera_info
+    expected_type: sensor_msgs/msg/CameraInfo
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_7_metadata
+    label: camera.test_camera_7.metadata
+    role: frame_metadata
+    topic: /cameras/test_camera_7/metadata
+    expected_type: hik_camera_msg/msg/FrameMetadata
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_8_image
+    label: camera.test_camera_8.image
+    role: camera_image
+    topic: /cameras/test_camera_8/image_raw
+    expected_type: sensor_msgs/msg/Image
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health:
+      expected_rate_hz: 60.0
+      min_rate_ratio: 0.90
+      max_gap_s: 0.20
+      recorder_drop_policy: fail
+      duration_overrides:
+        - max_duration_s: 5.0
+          min_rate_ratio: 0.70
+          max_gap_s: 0.30
+
+  - id: test_camera_8_info
+    label: camera.test_camera_8.info
+    role: camera_info
+    topic: /cameras/test_camera_8/camera_info
+    expected_type: sensor_msgs/msg/CameraInfo
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: test_camera_8_metadata
+    label: camera.test_camera_8.metadata
+    role: frame_metadata
+    topic: /cameras/test_camera_8/metadata
+    expected_type: hik_camera_msg/msg/FrameMetadata
+    required: true
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: header_device_or_driver}
+    health: {recorder_drop_policy: fail}
+
+  - id: hik_statistics
+    label: camera.hik.statistics
+    role: diagnostic
+    topic: /statistics
+    expected_type: hik_camera_msg/msg/CameraStatistics
+    required: false
+    start_gate: false
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: record_only}
+    health: {recorder_drop_policy: warn}
+
+  - id: hik_burst
+    label: camera.hik.burst
+    role: diagnostic
+    topic: /burst
+    expected_type: hik_camera_msg/msg/BurstStatistics
+    required: false
+    start_gate: false
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: record_only}
+    health: {recorder_drop_policy: warn}
+
+  - id: robot_joint_state
+    label: robot.joint_state
+    role: robot_state
+    topic: /joint_states
+    expected_type: sensor_msgs/msg/JointState
+    required: true
+    qos: {mode: auto, depth: 100}
+    time: {source_domain: header_robot_sample}
+    health:
+      expected_rate_hz: 500.0
+      min_rate_ratio: 0.80
+      max_gap_s: 0.05
+      recorder_drop_policy: fail
+
+  - id: left_pose_reference
+    label: execution.left.pose_reference
+    role: execution_command
+    topic: /position_controller/left_pose_reference
+    expected_type: geometry_msgs/msg/PoseStamped
+    required: false
+    start_gate: false
+    qos: {mode: auto, depth: 50}
+    time: {source_domain: header_controller_cycle}
+    health: {recorder_drop_policy: warn}
+
+  - id: right_pose_reference
+    label: execution.right.pose_reference
+    role: execution_command
+    topic: /position_controller/right_pose_reference
+    expected_type: geometry_msgs/msg/PoseStamped
+    required: false
+    start_gate: false
+    qos: {mode: auto, depth: 50}
+    time: {source_domain: header_controller_cycle}
+    health: {recorder_drop_policy: warn}
+
+  - id: left_em_status
+    label: execution.left.status
+    role: execution_status
+    topic: /execution_manager/left_status
+    expected_type: std_msgs/msg/String
+    required: true
+    start_gate: false
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: record_only}
+    health:
+      expected_rate_hz: 2.0
+      min_rate_ratio: 0.50
+      max_gap_s: 2.0
+      recorder_drop_policy: warn
+
+  - id: right_em_status
+    label: execution.right.status
+    role: execution_status
+    topic: /execution_manager/right_status
+    expected_type: std_msgs/msg/String
+    required: true
+    start_gate: false
+    qos: {mode: auto, depth: 10}
+    time: {source_domain: record_only}
+    health:
+      expected_rate_hz: 2.0
+      min_rate_ratio: 0.50
+      max_gap_s: 2.0
+      recorder_drop_policy: warn
+
+  - id: dynamic_transforms
+    label: calibration.tf
+    role: transform
+    topic: /tf
+    expected_type: tf2_msgs/msg/TFMessage
+    required: false
+    start_gate: false
+    qos: {mode: auto, depth: 100}
+    time: {source_domain: message_transform_headers}
+    health: {recorder_drop_policy: warn}
+
+  - id: static_transforms
+    label: calibration.tf_static
+    role: static_transform
+    topic: /tf_static
+    expected_type: tf2_msgs/msg/TFMessage
+    required: false
+    start_gate: false
+    qos:
+      mode: explicit
+      reliability: reliable
+      durability: transient_local
+      depth: 100
+    time: {source_domain: message_transform_headers}
+    health: {recorder_drop_policy: warn}
+
+  - id: marker_left_pose_target
+    label: teleop.marker_left.pose_target
+    role: raw_teleoperation
+    topic: /action_sources/marker_left/pose_target
+    expected_type: geometry_msgs/msg/PoseStamped
+    required: false
+    start_gate: false
+    qos: {mode: auto, depth: 50}
+    time: {source_domain: header_declared_host_receive}
+    health: {recorder_drop_policy: warn}
+
+  - id: marker_right_pose_target
+    label: teleop.marker_right.pose_target
+    role: raw_teleoperation
+    topic: /action_sources/marker_right/pose_target
+    expected_type: geometry_msgs/msg/PoseStamped
+    required: false
+    start_gate: false
+    qos: {mode: auto, depth: 50}
+    time: {source_domain: header_declared_host_receive}
+    health: {recorder_drop_policy: warn}

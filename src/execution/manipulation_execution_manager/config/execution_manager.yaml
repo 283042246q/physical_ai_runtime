@@ -1,0 +1,33 @@
+# Safe default profile: status-only until sources are configured.
+execution_manager:
+  ros__parameters:
+    joint_names: "joint_1,joint_2,joint_3,joint_4,joint_5,joint_6"
+
+    # Source configuration. Prefer `sources`; `active_source` is the legacy
+    # single-source fallback. Empty/default values create no motion inputs.
+    active_source: "none"
+    source_namespace: "/action_sources"
+    sources: ""
+
+    # Controller-facing endpoints.
+    output_topic: "/position_controller/joint_reference"
+    pose_output_topic: "/position_controller/pose_reference"
+    pose_chunk_output_topic: "/position_controller/pose_chunk_reference"
+    twist_output_topic: "/position_controller/twist_reference"
+    jtc_action_name: "/arm_controller/follow_joint_trajectory"
+
+    # Status and timestamp policy.
+    status_topic: "/execution_manager/status"
+    status_rate_hz: 2.0
+    stale_timeout_s: 0.5
+    max_future_s: 0.1
+    reject_zero_stamped_references: false
+
+    # Activation, recovery, and anti-flap policy.
+    arm_to_active_count: 1
+    degraded_to_active_count: 3
+    min_hold_duration_s: 0.05
+
+    # Comma-separated values in joint_names order; empty means unbounded.
+    joint_limits_lower: ""
+    joint_limits_upper: ""

@@ -1,0 +1,59 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 1000
+    thread_priority: 98
+    overruns:
+      manage: false
+      print_warnings: false
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    franka_robot_state_broadcaster:
+      type: franka_robot_state_broadcaster/FrankaRobotStateBroadcaster
+      state_interfaces: [robot_state]
+    franka_arm_jspc:
+      type: manipulation_position_controllers/JointSpaceImpedanceController
+
+joint_state_broadcaster:
+  ros__parameters:
+    publish_rate: 100.0
+
+franka_robot_state_broadcaster:
+  ros__parameters:
+    convenience_publish_rate: 100
+
+franka_arm_jspc:
+  ros__parameters:
+    joints:
+      - fr3_joint1
+      - fr3_joint2
+      - fr3_joint3
+      - fr3_joint4
+      - fr3_joint5
+      - fr3_joint6
+      - fr3_joint7
+    input_topic: /franka_arm_jspc/joint_reference
+
+    # Validated teleop defaults (2026-07-26): impedance + Ruckig.
+    # τ = Kp(e) + Kd(q̇_ref − dq_filt); Ruckig supplies q_ref / q̇_ref.
+    kp_stiffness: [1000.0, 1000.0, 1000.0, 1000.0, 500.0, 320.0, 150.0]
+    kd_damping: [25.0, 25.0, 25.0, 25.0, 12.0, 10.0, 5.0]
+    max_torques: [87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0]
+    velocity_filter_alpha: 0.99
+
+    reference_behavior:
+      # Default: smoother than limiter+EMA for marker teleop.
+      mode: ruckig
+      max_points: 1
+      stale_timeout_s: 0.5
+      # Under FR3 FCI necessary floors (~2.62 rad/s, ~10 rad/s²).
+      max_velocity_rad_s: 2.5
+      max_acceleration_rad_s2: 10.0
+      max_jerk_rad_s3: 150.0
+      ruckig_control_cycle_s: 0.001
+      ema_alpha: 0.95  # unused when mode=ruckig; kept for A/B switch
+    lower_limits: [-2.9007, -1.8361, -2.9007, -3.0770, -2.8763, 0.4398, -3.0508]
+    upper_limits: [2.9007, 1.8361, 2.9007, -0.1169, 2.8763, 4.6216, 3.0508]
+    allow_partial_joint_references: false
+    reject_out_of_bounds_targets: true
+    robot_time_interface: fr3/robot_time

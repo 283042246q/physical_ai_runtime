@@ -1,0 +1,56 @@
+已完成。MPD 与 ROS 2 对外接口统一使用 fr3 命名，并保留内部 Panda 训练模
+  型名称，避免破坏权重加载。
+
+  主要改动：
+
+  - 新增 physical_ai_runtime/src/apps/franka_trajectory_jtc_test/
+    franka_trajectory_jtc_test/send_mpd_trajectory.py:185
+      - 默认 plan_only:=true
+      - 调用 MPD infer_once.py
+      - 校验 FR3 关节名、轨迹维度、时间戳、起点误差
+      - 保存 JSON/NPZ
+      - plan_only:=false 时发布给 JTC
+      - MPD 在后台线程运行，不阻塞 ROS 回调
+
+  - MPD 运行时契约改为 fr3_joint1..7、franka_fr3、fr3_link0
+  - 增加控制台入口、测试及说明文档
+  - 按要求暂未加入 FR3 严格关节限位和重新时间参数化
+  - 保留 Warehouse 障碍物场景参与规划
+
+  已验证：
+
+  - Python 编译检查通过
+  - 单元测试：3 passed
+  - ROS 2 包构建、测试全部通过
+  - 实际 MPD + fake hardware 完整链路通过
+  - JTC 状态：EXECUTING → SUCCEEDED
+  - 128 个轨迹点，10 秒
+  - plan_only 模式确认不会发布
+  - 未向真机发送任何命令
+
+  假硬件完整测试：
+
+  cd /home/eric/Projects/physical_ai_runtime
+  source install/setup.bash
+
+  ros2 launch franka_trajectory_jtc_test trajectory_executor.launch.py \
+    use_fake_hardware:=true
+
+  另一个终端：
+
+  cd /home/eric/Projects/physical_ai_runtime
+  source install/setup.bash
+
+  ros2 run franka_trajectory_jtc_test send_mpd_trajectory --ros-args \
+    -p plan_only:=false \
+    -p q_pos_goal:="[0.2,-0.3,0.1,-1.8,0.2,1.6,0.1]"
+
+  只规划时省略 plan_only 参数即可，结果默认保存到：
+
+  /tmp/mpd-fr3-plans/<request_id>/
+
+  真机时将 launch 参数改成：
+
+  use_fake_hardware:=false robot_ip:=192.168.2.101
+
+  然后先用默认 plan_only:=true 检查 NPZ，确认后再设置 plan_only:=false。

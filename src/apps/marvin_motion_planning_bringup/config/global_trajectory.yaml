@@ -1,0 +1,22 @@
+arms:
+  left:
+    enabled: true
+    target:
+      link_name: flange_L
+      pose_topic: /teleop/pose_left
+    planning:
+      mode: global_trajectory
+      backend:
+        name: pyroki
+        parameters:
+          load_meshes: true
+          max_state_age_s: 0.2
+          position_tolerance_m: 0.01
+          orientation_tolerance_rad: 0.05
+          timesteps: 40
+          dt: 0.05
+  right:
+    enabled: false
+groups:
+  bimanual:
+    enabled: false

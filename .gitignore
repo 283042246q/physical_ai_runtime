@@ -53,17 +53,9 @@ ref/
 
 # ROS package checkouts under src/ are managed as independent repositories.
 # Keep structural placeholders so the workspace tree is present in git.
-/src/**/
-/src/**
-!/src/
-!/src/**/
-!/src/**/.gitkeep
-!/src/toolbox/
-!/src/toolbox/**/
-!/src/toolbox/**
-!/src/policy_inference/
-!/src/policy_inference/**/
-!/src/policy_inference/**
+/src/embodiments/**/
+/src/embodiments/**
+
 
 # Never track Python bytecode or cache directories under src.
 /src/**/__pycache__/

@@ -1,0 +1,53 @@
+# MoveIt-style FR3 arm controller: full JointTrajectory → effort JTC + PID.
+# Matches franka_fr3_moveit_config/config/fr3_ros_controllers.yaml.
+controller_manager:
+  ros__parameters:
+    update_rate: 1000
+    thread_priority: 98
+    overruns:
+      manage: false
+      print_warnings: false
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    franka_robot_state_broadcaster:
+      type: franka_robot_state_broadcaster/FrankaRobotStateBroadcaster
+      state_interfaces: [robot_state]
+
+    fr3_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+joint_state_broadcaster:
+  ros__parameters:
+    publish_rate: 100.0
+
+franka_robot_state_broadcaster:
+  ros__parameters:
+    convenience_publish_rate: 100
+
+fr3_arm_controller:
+  ros__parameters:
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position
+      - velocity
+    # Streaming joint-GUI segments often end with non-zero velocity and are
+    # preempted by the next goal; require zero final velocity would reject them.
+    allow_nonzero_velocity_at_trajectory_end: true
+    joints:
+      - fr3_joint1
+      - fr3_joint2
+      - fr3_joint3
+      - fr3_joint4
+      - fr3_joint5
+      - fr3_joint6
+      - fr3_joint7
+    gains:
+      fr3_joint1: { p: 600.0, d: 30.0, i: 0.0, i_clamp: 1.0 }
+      fr3_joint2: { p: 600.0, d: 30.0, i: 0.0, i_clamp: 1.0 }
+      fr3_joint3: { p: 600.0, d: 30.0, i: 0.0, i_clamp: 1.0 }
+      fr3_joint4: { p: 600.0, d: 30.0, i: 0.0, i_clamp: 1.0 }
+      fr3_joint5: { p: 250.0, d: 10.0, i: 0.0, i_clamp: 1.0 }
+      fr3_joint6: { p: 150.0, d: 10.0, i: 0.0, i_clamp: 1.0 }
+      fr3_joint7: { p: 50.0, d: 5.0, i: 0.0, i_clamp: 1.0 }

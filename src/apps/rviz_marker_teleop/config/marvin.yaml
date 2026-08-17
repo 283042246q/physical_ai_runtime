@@ -1,0 +1,24 @@
+rviz:
+  package: marvin_description
+  config: rviz/visualize_marvin.rviz
+
+markers:
+  - name: left
+    base_frame: Base_L
+    target_frame: flange_L
+    pose_topic: /action_sources/marker_left/pose_target
+    publish_frequency: 50.0
+    publish_before_first_feedback: false
+    server_namespace: target_marker_left
+    marker_name: marvin_left_target
+    marker_description: Marvin Left Target Pose
+
+  - name: right
+    base_frame: Base_R
+    target_frame: flange_R
+    pose_topic: /action_sources/marker_right/pose_target
+    publish_frequency: 50.0
+    publish_before_first_feedback: false
+    server_namespace: target_marker_right
+    marker_name: marvin_right_target
+    marker_description: Marvin Right Target Pose

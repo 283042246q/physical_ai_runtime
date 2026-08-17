@@ -1,0 +1,46 @@
+# Site bringup: eight serial-bound cameras, strict PTP Scheduled Action,
+# 1080x720 BayerRG8 at 30 Hz on the 10 GbE Hik LAN (enp1s0 / 192.168.1.0/24).
+# Identity names differ from hik_camera/config/multi_camera.yaml; serials match.
+hik_camera_node:
+  ros__parameters:
+    single_camera_mode: false
+    stable_identity_enable: true
+    max_cameras: 8
+    camera_names: ["cam_0", "cam_1", "cam_2", "cam_3", "cam_4", "cam_5", "cam_6", "cam_7"]
+    camera_serials: ["DA9342700", "DA9342615", "DA9342673", "DA9342471", "DA9342477", "DA9342716", "DA9342583", "DA9342685"]
+    camera_frame_ids: ["cam_0_optical_frame", "cam_1_optical_frame", "cam_2_optical_frame", "cam_3_optical_frame", "cam_4_optical_frame", "cam_5_optical_frame", "cam_6_optical_frame", "cam_7_optical_frame"]
+    camera_calibration_urls: ["", "", "", "", "", "", "", ""]
+
+    width: 1080
+    height: 720
+    frame_rate: 30.0
+    exposure_us: 5000.0
+    gain_db: 5.0
+    packet_size: 9000
+    inter_packet_delay_us: 25
+    frame_transmission_delay_step_us: 0
+    image_encoding: "bayer_rggb8"
+
+    ptp_enable: true
+    ptp_strict_mode: true
+    ptp_wait_sec: 60
+    ptp_monitor_interval_sec: 1
+    ptp_loss_policy: "stop"
+    action_device_key: 1
+    action_group_key: 1
+    action_group_mask: 1
+    action_ack_ms: 0
+    action_time_enable: 1
+    # Delivery margin, not PTP error. Validated 20 ms at 30 Hz.
+    action_lead_ms: 20
+    action_clock_refresh_sec: 10
+    scheduled_action_fallback: "fail"
+
+    frame_wait_ms: 300
+    stats_interval_sec: 5
+    latency_statistics_enable: true
+    display_enable: false
+    record_enable: false
+    run_duration_sec: 0
+    stats_csv_path: ""
+    frame_profile_csv: ""

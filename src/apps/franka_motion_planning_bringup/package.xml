@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>franka_motion_planning_bringup</name>
+  <version>0.1.0</version>
+  <description>Franka motion-planning bringup with jerk-bounded joint-position execution.</description>
+  <maintainer email="guomning@gmail.com">Gabriel-Ning</maintainer>
+  <license>Apache-2.0</license>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>franka_bringup</exec_depend>
+  <exec_depend>franka_robot_state_broadcaster</exec_depend>
+  <exec_depend>pyroki_planner_adapter</exec_depend>
+  <exec_depend>manipulation_execution_manager</exec_depend>
+  <exec_depend>manipulation_position_controllers</exec_depend>
+  <exec_depend>rviz_marker_teleop</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>
