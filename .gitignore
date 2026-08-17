@@ -1,3 +1,4 @@
+address_token.txt
 # Pixi, direnv, and Python caches
 .pixi/
 .direnv/

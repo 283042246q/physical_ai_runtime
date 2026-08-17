@@ -5,7 +5,6 @@ Replace ``DiffusionPlanner.plan()`` with your model. Keep the request/result
 dicts below unchanged so the ROS node does not need edits.
 
 Request (dict):
-  schema_version, request_id, scene_id, seed
   robot_model, planning_frame, joint_names
   q_pos_start / q_pos_goal     [7]
   q_vel_start / q_vel_goal     [7]
@@ -24,25 +23,12 @@ D = number of joints (FR3: 7).
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
-import subprocess
-import tempfile
-import uuid
-
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-
-MPD_CONDA = Path("/home/eric/anaconda3/bin/conda")
-MPD_ENV = "mpd-splines-public"
-MPD_INFER_ONCE = Path(
-    "/home/eric/Projects/MotionPlanningDiffusion/mpd/scripts/runtime/infer_once.py"
-)
 
 FR3_JOINTS = [
     "fr3_joint1",
@@ -64,63 +50,29 @@ class DiffusionPlanner:
         pass
 
     def plan(self, request: dict) -> dict:
-        """Run one MPD inference subprocess and return its neutral trajectory."""
-        payload = {
-            key: value.tolist() if isinstance(value, np.ndarray) else value
-            for key, value in request.items()
+        """Run one start->goal plan. Swap the body for your real inference."""
+        # ------------------------------------------------------------------
+        # Migration point: call your model with ``request`` and return the
+        # same result keys/shapes. Example:
+        #
+        #   return self.model.sample(request)
+        # ------------------------------------------------------------------
+        start = np.asarray(request["q_pos_start"], dtype=np.float64)
+        goal = np.asarray(request["q_pos_goal"], dtype=np.float64)
+        # Stub only. Your model chooses T (= number of trajectory points).
+        num_points = 128
+        duration_s = 10.0
+        alpha = np.linspace(0.0, 1.0, num_points, dtype=np.float64)[:, None]
+        positions = (1.0 - alpha) * start + alpha * goal
+        return {
+            "positions": positions,  # [T, D]
+            "velocities": np.zeros_like(positions),  # [T, D]
+            "accelerations": np.zeros_like(positions),  # [T, D]
+            "time_from_start": np.linspace(
+                0.0, duration_s, num_points, dtype=np.float64
+            ),
+            "joint_names": list(request["joint_names"]),
         }
-        child_env = os.environ.copy()
-        # The ROS/Pixi environment contains Python 3.12 site-packages. Let the
-        # MPD Conda environment select only its own Python 3.10 packages.
-        child_env.pop("PYTHONPATH", None)
-        child_env.pop("PYTHONHOME", None)
-        with tempfile.TemporaryDirectory(prefix="mpd-infer-") as temporary_dir:
-            output_dir = Path(temporary_dir)
-            request_path = output_dir / "request.json"
-            request_path.write_text(json.dumps(payload), encoding="utf-8")
-            completed = subprocess.run(
-                [
-                    MPD_CONDA,
-                    "run",
-                    "--no-capture-output",
-                    "-n",
-                    MPD_ENV,
-                    "python",
-                    MPD_INFER_ONCE,
-                    "--request",
-                    request_path,
-                    "--output-dir",
-                    output_dir,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=900,
-                check=False,
-                env=child_env,
-            )
-            result_path = output_dir / "result.json"
-            result = (
-                json.loads(result_path.read_text(encoding="utf-8"))
-                if result_path.is_file()
-                else {}
-            )
-            if completed.returncode != 0 or result.get("status") != "success":
-                message = (
-                    result.get("error", {}).get("message") or completed.stderr.strip()
-                )
-                raise RuntimeError(message or "MPD inference failed")
-            if result.get("request_id") != payload["request_id"]:
-                raise RuntimeError("MPD result request_id does not match the request")
-
-            trajectory_path = output_dir / result["trajectory_file"]
-            with np.load(trajectory_path, allow_pickle=False) as trajectory:
-                return {
-                    "positions": trajectory["positions"].copy(),
-                    "velocities": trajectory["velocities"].copy(),
-                    "accelerations": trajectory["accelerations"].copy(),
-                    "time_from_start": trajectory["time_from_start"].copy(),
-                    "joint_names": trajectory["joint_names"].tolist(),
-                }
 
 
 class DiffusionPlannerNode(Node):
@@ -130,8 +82,6 @@ class DiffusionPlannerNode(Node):
         self.declare_parameter("joint_state_topic", "/franka/joint_states")
         self.declare_parameter("robot_model", "franka_fr3")
         self.declare_parameter("planning_frame", "fr3_link0")
-        self.declare_parameter("scene_id", "EnvWarehouseExtraObjectsV00")
-        self.declare_parameter("seed", 12345)
         self.declare_parameter("q_pos_goal", [0.2, -0.3, 0.1, -1.8, 0.2, 1.6, 0.1])
 
         self.joint_names = list(self.get_parameter("joint_names").value)
@@ -166,8 +116,6 @@ class DiffusionPlannerNode(Node):
 
         zeros = np.zeros(len(self.joint_names), dtype=np.float64)
         request = {
-            "schema_version": 1,
-            "request_id": str(uuid.uuid4()),
             "robot_model": str(self.get_parameter("robot_model").value),
             "planning_frame": str(self.get_parameter("planning_frame").value),
             "joint_names": self.joint_names,
@@ -179,8 +127,6 @@ class DiffusionPlannerNode(Node):
             "q_vel_goal": zeros.copy(),
             "q_acc_start": zeros.copy(),
             "q_acc_goal": zeros.copy(),
-            "scene_id": str(self.get_parameter("scene_id").value),
-            "seed": int(self.get_parameter("seed").value),
         }
         result = self.planner.plan(request)
         self.publisher.publish(self.result_to_ros(result))

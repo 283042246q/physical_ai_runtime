@@ -1,0 +1,119 @@
+ 推荐先做“隔离 ROS domain 的完整链路验证”，不会影响正在运行的真实机器人系统。
+
+  ## 1. 先验证 infer_once
+
+  创建与上层 request 完全一致的输入：
+
+  OUT=/tmp/mpd-local-verify
+  mkdir -p "$OUT"
+
+  cat > "$OUT/request.json" <<'JSON'
+  {
+    "robot_model": "franka_fr3",
+    "planning_frame": "fr3_link0",
+    "joint_names": [
+      "fr3_joint1",
+      "fr3_joint2",
+      "fr3_joint3",
+      "fr3_joint4",
+      "fr3_joint5",
+      "fr3_joint6",
+      "fr3_joint7"
+    ],
+    "q_pos_start": [0.0, 0.0, 0.0, -1.5, 0.0, 1.5, 0.0],
+    "q_pos_goal": [0.2, -0.3, 0.1, -1.8, 0.2, 1.6, 0.1],
+    "q_vel_start": [0, 0, 0, 0, 0, 0, 0],
+    "q_vel_goal": [0, 0, 0, 0, 0, 0, 0],
+    "q_acc_start": [0, 0, 0, 0, 0, 0, 0],
+    "q_acc_goal": [0, 0, 0, 0, 0, 0, 0]
+  }
+  JSON
+
+  /home/eric/anaconda3/bin/conda run --no-capture-output \
+    -n mpd-splines-public \
+    python /home/eric/Projects/MotionPlanningDiffusion/mpd/scripts/runtime/
+    infer_once.py \
+    --request "$OUT/request.json" \
+    --output-dir "$OUT/result" \
+    --device cuda:0
+
+  检查结果：
+
+  python - <<'PY'
+  import json
+  import numpy as np
+
+  output = "/tmp/mpd-local-verify/result"
+
+  with open(f"{output}/result.json", encoding="utf-8") as stream:
+      result = json.load(stream)
+
+  print("status:", result["status"])
+  print("candidates:", result.get("candidates"))
+  print("diagnostics:", result.get("best_trajectory_diagnostics"))
+
+  assert result["status"] == "success"
+
+  with np.load(f"{output}/trajectory.npz", allow_pickle=False) as trajectory:
+      print("positions:", trajectory["positions"].shape)
+      print("velocities:", trajectory["velocities"].shape)
+      print("accelerations:", trajectory["accelerations"].shape)
+      print("duration:", trajectory["time_from_start"][-1])
+      print("joints:", trajectory["joint_names"].tolist())
+
+      assert trajectory["positions"].shape == (128, 7)
+      assert np.isfinite(trajectory["positions"]).all()
+      assert np.all(np.diff(trajectory["time_from_start"]) > 0)
+
+  print("local inference validation passed")
+  PY
+
+  如果该 start/goal 在当前 Warehouse 场景中无效，程序会直接返回 invalid_request；此时换成
+  数据集中一组已知有效的关节状态。
+
+  ## 2. 验证完整 ROS 上层调用
+
+  使用隔离的 ROS_DOMAIN_ID=91，确保真实 Execution Manager 收不到轨迹。
+
+  终端一，启动上层节点：
+
+  cd /home/eric/Projects/physical_ai_runtime
+  source install/setup.bash
+  export ROS_DOMAIN_ID=91
+
+  python src/policy_inference/examples/diffusion_planner_example.py --ros-args \
+    -p q_pos_goal:="[0.2,-0.3,0.1,-1.8,0.2,1.6,0.1]"
+
+  终端二，先等待输出：
+
+  cd /home/eric/Projects/physical_ai_runtime
+  source install/setup.bash
+  export ROS_DOMAIN_ID=91
+
+  ros2 topic echo --once \
+    /action_sources/trajectory_test/joint_trajectory_goal \
+    trajectory_msgs/msg/JointTrajectory
+
+  终端三，发送一次模拟关节状态：
+
+  cd /home/eric/Projects/physical_ai_runtime
+  source install/setup.bash
+  export ROS_DOMAIN_ID=91
+
+  ros2 topic pub --once /franka/joint_states sensor_msgs/msg/JointState \
+  "{name: [
+    fr3_joint1, fr3_joint2, fr3_joint3, fr3_joint4,
+    fr3_joint5, fr3_joint6, fr3_joint7
+  ], position: [0.0, 0.0, 0.0, -1.5, 0.0, 1.5, 0.0],
+  velocity: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}"
+
+  预期：
+
+  - 节点输出 Published diffusion plan with 128 waypoints
+  - 终端二收到一个包含 128 个 JointTrajectoryPoint 的消息
+  - 不启动 EM、JTC 或真实机器人驱动
+
+  上层调用实现位于 /home/eric/Projects/physical_ai_runtime/src/policy_inference/examples/
+  diffusion_planner_example.py:63。
+
+

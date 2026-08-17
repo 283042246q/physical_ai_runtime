@@ -60,7 +60,7 @@ is the migration template for a diffusion planner with this contract:
 q_pos/vel/acc start+goal  ->  DiffusionPlanner.plan(request)
                           ->  positions/velocities/accelerations [T,D]
                               time_from_start [T]
-                          ->  /action_sources/policy/joint_trajectory_goal
+                          ->  /action_sources/trajectory_test/joint_trajectory_goal
 ```
 
 `T` is the number of points in the trajectory (chosen by the model).
@@ -69,7 +69,7 @@ be `[T,D]` / `[T]` with matching `joint_names`.
 
 ```bash
 python src/policy_inference/examples/diffusion_planner_example.py --ros-args \
-  -p joint_names:="[panda_joint1,panda_joint2,panda_joint3,panda_joint4,panda_joint5,panda_joint6,panda_joint7]" \
+  -p joint_names:="[fr3_joint1,fr3_joint2,fr3_joint3,fr3_joint4,fr3_joint5,fr3_joint6,fr3_joint7]" \
   -p q_pos_goal:="[0.2,-0.3,0.1,-1.8,0.2,1.6,0.1]"
 ```
 
@@ -84,7 +84,7 @@ VLA chunks publish to:
 Complete learned trajectories publish to:
 
 ```text
-/action_sources/policy/joint_trajectory_goal
+/action_sources/trajectory_test/joint_trajectory_goal
 ```
 
 The complete-trajectory input is opt-in. The application-owned Execution
