@@ -35,6 +35,7 @@ from .collision_guard import (
 )
 from .dynamic_world import DynamicWorldError, DynamicWorldManager, DynamicWorldSnapshot
 from .handoff_selector import select_earliest_low_speed_handoff
+from .replay_recorder import DynamicReplayRecorder
 
 
 @dataclass(frozen=True)
@@ -118,6 +119,9 @@ class MpdDynamicReplanNode(Node):
             "brake_max_deceleration_rad_s2": 1.0,
             "brake_minimum_duration_s": 0.20,
             "brake_sample_dt_s": 0.02,
+            "replay_record_dir": "",
+            "replay_env_name": "",
+            "replay_static_scene_json": "",
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -184,6 +188,17 @@ class MpdDynamicReplanNode(Node):
         self._braking = False
         self._last_guard_reason = "not_checked"
         self._last_guard_clearance_m = math.inf
+        replay_record_dir = str(value("replay_record_dir"))
+        self._replay_recorder = (
+            DynamicReplayRecorder(
+                replay_record_dir,
+                env_name=str(value("replay_env_name")) or str(value("scene_id")),
+                static_scene_path=str(value("replay_static_scene_json")),
+            )
+            if replay_record_dir
+            else None
+        )
+        self._replay_record_error_logged = False
         self._latencies_s: deque[float] = deque(maxlen=512)
         self._counters = {
             key: 0
@@ -245,6 +260,28 @@ class MpdDynamicReplanNode(Node):
         self._generation += 1
         self._planner.invalidate(self._generation)
 
+    def _record_replay(self, method: str, *args, **kwargs):
+        """Keep optional replay I/O strictly outside the planning safety path."""
+        recorder = self._replay_recorder
+        if recorder is None:
+            return None
+        try:
+            result = getattr(recorder, method)(*args, **kwargs)
+            if method in {
+                "record_candidate",
+                "record_rejected",
+                "record_activation",
+                "record_terminal",
+            }:
+                recorder.flush()
+            return result
+        except Exception as error:  # Replay must never perturb planning/execution.
+            if not self._replay_record_error_logged:
+                self.get_logger().error(f"disabled dynamic replay recording: {error}")
+                self._replay_record_error_logged = True
+            self._replay_recorder = None
+            return None
+
     def _on_joint_state(self, message: JointState) -> None:
         try:
             positions = dict(zip(message.name, message.position))
@@ -258,6 +295,7 @@ class MpdDynamicReplanNode(Node):
             return
         self._state = StartState(list(EXPECTED_JOINT_NAMES), q, dq, _stamp_s(message.header.stamp))
         self._state_received_monotonic = time.monotonic()
+        self._record_replay("record_state", self._state)
 
     def _on_world(self, message: String) -> None:
         try:
@@ -267,6 +305,7 @@ class MpdDynamicReplanNode(Node):
             self.get_logger().warning(f"ignored invalid dynamic world: {error}")
             return
         self._world_received_monotonic = time.monotonic()
+        self._record_replay("record_world", snapshot)
         self.get_logger().debug(f"accepted dynamic world version {snapshot.version}")
 
     def _on_pose_target(self, message: PoseStamped) -> None:
@@ -412,6 +451,13 @@ class MpdDynamicReplanNode(Node):
         for completion in self._planner.drain():
             if completion.superseded or completion.generation != self._generation:
                 self._counters["superseded"] += 1
+                if completion.result is not None and completion.result.valid:
+                    self._record_replay(
+                        "record_rejected",
+                        completion.generation,
+                        completion.result,
+                        start_unix_s=completion.job.handoff_unix_ns * 1e-9,
+                    )
                 continue
             if completion.error is not None:
                 self._counters["worker_error"] += 1
@@ -425,6 +471,12 @@ class MpdDynamicReplanNode(Node):
                 continue
             if time.time_ns() >= completion.job.deadline_unix_ns:
                 self._counters["deadline_miss"] += 1
+                self._record_replay(
+                    "record_rejected",
+                    completion.generation,
+                    result,
+                    start_unix_s=completion.job.handoff_unix_ns * 1e-9,
+                )
                 continue
             if not self._commit(completion.job, result):
                 continue
@@ -464,6 +516,13 @@ class MpdDynamicReplanNode(Node):
             self._trajectory_publisher.publish(
                 self._to_message(result, job.handoff_unix_ns)
             )
+            self._record_replay(
+                "record_candidate",
+                job.generation,
+                result,
+                start_unix_s=handoff,
+                handoff_unix_s=handoff,
+            )
             return True
         try:
             merged = splice_for_handoff(
@@ -490,11 +549,23 @@ class MpdDynamicReplanNode(Node):
         except (HandoffValidationError, KeyError, ValueError) as error:
             self._counters["handoff_rejected"] += 1
             self.get_logger().warning(f"dynamic handoff rejected: {error}")
+            self._record_replay(
+                "record_rejected",
+                job.generation,
+                result,
+                start_unix_s=handoff,
+            )
             self._controlled_brake("handoff_validation_failed", clear_target=True)
             return False
         current_world = self._world_manager.snapshot
         if not risk.safe or current_world is None or current_world.version != latest_world.version:
             self._counters["world_revalidation_rejected"] += 1
+            self._record_replay(
+                "record_rejected",
+                job.generation,
+                result,
+                start_unix_s=handoff,
+            )
             self._controlled_brake("latest_world_revalidation_failed", clear_target=True)
             return False
         message = self._to_message(merged, int(commit_start * 1e9))
@@ -505,6 +576,13 @@ class MpdDynamicReplanNode(Node):
         self._candidate_plans[job.generation] = (
             TimedPlan(merged, commit_start),
             merged_collision,
+        )
+        self._record_replay(
+            "record_candidate",
+            job.generation,
+            merged,
+            start_unix_s=commit_start,
+            handoff_unix_s=handoff,
         )
         self._counters["goal_submitted"] += 1
         return True
@@ -546,6 +624,15 @@ class MpdDynamicReplanNode(Node):
             self._generation += 1
             if self._execution.submit(self._generation, message):
                 self._candidate_plans[self._generation] = (TimedPlan(brake, start), None)
+                self._record_replay(
+                    "record_candidate",
+                    self._generation,
+                    brake,
+                    start_unix_s=start,
+                    handoff_unix_s=None,
+                    braking=True,
+                    reason=reason,
+                )
                 self._counters["goal_submitted"] += 1
             else:
                 self._execution.cancel()
@@ -555,6 +642,7 @@ class MpdDynamicReplanNode(Node):
         candidate = self._candidate_plans.get(plan_id)
         if candidate is not None:
             self._active_plan, self._active_collision_plan = candidate
+        self._record_replay("record_activation", plan_id)
         self._counters["goal_accepted"] += 1
 
     def _on_goal_terminal(self, plan_id: int, state: str) -> None:
@@ -565,6 +653,7 @@ class MpdDynamicReplanNode(Node):
             self._active_collision_plan = None
         if state in ("REJECTED", "ABORTED", "SEND_ERROR", "RESULT_ERROR"):
             self.get_logger().error(f"JTC dynamic plan {plan_id} entered {state}")
+        self._record_replay("record_terminal", plan_id)
 
     @staticmethod
     def _to_message(result, start_unix_ns: int) -> JointTrajectory:
@@ -609,6 +698,10 @@ class MpdDynamicReplanNode(Node):
         self._planner.close()
         if self._execution is not None:
             self._execution.destroy()
+        if self._replay_recorder is not None:
+            manifest_path = self._replay_recorder.close()
+            if manifest_path is not None:
+                self.get_logger().info(f"dynamic replay manifest: {manifest_path}")
         return super().destroy_node()
 
 

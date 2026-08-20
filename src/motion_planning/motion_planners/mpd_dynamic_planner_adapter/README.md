@@ -78,3 +78,25 @@ Safety behavior:
 This is a soft-real-time geometric safety layer, not a certified protective
 stop. Real-hardware use still requires the robot's independent protective stop,
 site-specific braking calibration, and conservative speed/acceleration limits.
+
+## Passive replay recording
+
+`replan_dynamic.launch.py` and `replan_dynamic_fake_hardware.launch.py` retain their old
+defaults. Recording is enabled only when all three output arguments are supplied:
+
+```bash
+replay_record_dir:=/tmp/mpd-episode \
+replay_env_name:=EnvOpenDrawerShelf \
+replay_static_scene_json:=/tmp/static-scene.json
+```
+
+The recorder is an observer: it cannot approve/reject a plan or change the command sent
+to JTC. Runtime write failures disable recording and leave planning/execution running.
+It atomically checkpoints `replay-manifest.json` after planning/execution state changes,
+so a second interrupt during ROS shutdown does not lose the episode. The additional
+`scene_id` and `socket_path` launch arguments allow a selectable MPD environment and a
+run-local resident-worker socket without changing the original defaults.
+
+For the complete ToDrawer fake-hardware-to-video command, use
+`mpd/scripts/isaaclab/run_dynamic_demo_pipeline.sh --profile to_drawer` from the MPD
+repository.

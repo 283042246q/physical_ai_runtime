@@ -30,8 +30,19 @@ class DynamicWorldDemoNode(Node):
         elapsed = time.time() - self._started
         if self._scenario == "safe_far":
             position = [1.5, 1.5 + 0.05 * elapsed, 1.5]
+            local_sdf = {"type": "box", "size_xyz": [0.20, 0.12, 0.30]}
+            base_inflation_m = 0.01
+            horizon_inflation_rate_m_s = 0.005
         elif self._scenario == "crossing":
             position = [0.55, -0.5 + 0.08 * elapsed, 0.45]
+            local_sdf = {"type": "box", "size_xyz": [0.20, 0.12, 0.30]}
+            base_inflation_m = 0.01
+            horizon_inflation_rate_m_s = 0.005
+        elif self._scenario == "to_drawer_crossing":
+            position = [0.12 - 0.045 * elapsed, 0.40, 0.38]
+            local_sdf = {"type": "box", "size_xyz": [0.16, 0.12, 0.18]}
+            base_inflation_m = 0.03
+            horizon_inflation_rate_m_s = 0.02
         else:
             self.get_logger().error(f"unknown scenario {self._scenario!r}")
             return
@@ -43,10 +54,7 @@ class DynamicWorldDemoNode(Node):
                 "objects": [
                     {
                         "id": "demo-box",
-                        "local_sdf": {
-                            "type": "box",
-                            "size_xyz": [0.20, 0.12, 0.30],
-                        },
+                        "local_sdf": local_sdf,
                         "position": position,
                         "orientation_xyzw": [0.0, 0.0, 0.0, 1.0],
                         "position_covariance_3x3": [
@@ -61,8 +69,8 @@ class DynamicWorldDemoNode(Node):
                             0.0001,
                         ],
                         "inflation_mode": "linear",
-                        "base_inflation_m": 0.01,
-                        "horizon_inflation_rate_m_s": 0.005,
+                        "base_inflation_m": base_inflation_m,
+                        "horizon_inflation_rate_m_s": horizon_inflation_rate_m_s,
                     }
                 ],
             },

@@ -17,6 +17,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("plan_only", default_value="true"),
         DeclareLaunchArgument("plan_rate_hz", default_value="1.0"),
         DeclareLaunchArgument("target_pose_xyzw", default_value=""),
+        DeclareLaunchArgument("scene_id", default_value="EnvWarehouseExtraObjectsV00"),
+        DeclareLaunchArgument("socket_path", default_value="/tmp/mpd-dynamic-runtime.sock"),
+        DeclareLaunchArgument("replay_record_dir", default_value=""),
+        DeclareLaunchArgument("replay_env_name", default_value=""),
+        DeclareLaunchArgument("replay_static_scene_json", default_value=""),
         DeclareLaunchArgument("joint_state_topic", default_value="/franka/joint_states"),
         DeclareLaunchArgument(
             "world_observation_topic", default_value="/mpd/dynamic_world_observations"
@@ -37,6 +42,13 @@ def generate_launch_description() -> LaunchDescription:
                 "plan_rate_hz": LaunchConfiguration("plan_rate_hz"),
                 "target_pose_xyzw": ParameterValue(
                     LaunchConfiguration("target_pose_xyzw"), value_type=str
+                ),
+                "scene_id": LaunchConfiguration("scene_id"),
+                "socket_path": LaunchConfiguration("socket_path"),
+                "replay_record_dir": LaunchConfiguration("replay_record_dir"),
+                "replay_env_name": LaunchConfiguration("replay_env_name"),
+                "replay_static_scene_json": LaunchConfiguration(
+                    "replay_static_scene_json"
                 ),
                 "joint_state_topic": LaunchConfiguration("joint_state_topic"),
                 "world_observation_topic": LaunchConfiguration("world_observation_topic"),
