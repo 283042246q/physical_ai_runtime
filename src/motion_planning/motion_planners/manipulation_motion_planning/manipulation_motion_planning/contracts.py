@@ -148,6 +148,7 @@ class TrajectoryPlanPoint:
     positions: list[float]
     velocities: Optional[list[float]] = None
     time_from_start_s: float = 0.0
+    accelerations: Optional[list[float]] = None
 
 
 @dataclass

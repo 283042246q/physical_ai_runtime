@@ -18,11 +18,16 @@ from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-from manipulation_motion_planning.contracts import JointTarget, PoseTarget, StartState
+from manipulation_motion_planning.contracts import (
+    JointTarget,
+    PoseTarget,
+    StartState,
+    TrajectoryPlanPoint,
+    TrajectoryPlanResult,
+)
 from mpd_planner_adapter.backend import EXPECTED_JOINT_NAMES
 from mpd_planner_adapter.coordinator import LatestOnlyPlanner
 from mpd_planner_adapter.execution import JtcHandoffManager
-from mpd_planner_adapter.handoff import HandoffValidationError, splice_for_handoff
 from mpd_planner_adapter.trajectory import TimedPlan
 
 from .backend import DynamicMpdGlobalTrajectoryBackend
@@ -34,7 +39,17 @@ from .collision_guard import (
     splice_collision_plans,
 )
 from .dynamic_world import DynamicWorldError, DynamicWorldManager, DynamicWorldSnapshot
-from .handoff_selector import select_earliest_low_speed_handoff
+from .candidate_selector import (
+    CandidateCost,
+    choose_hysteretic_switch,
+    clearance_cost,
+    common_window_kinematic_cost,
+)
+from .quintic_bridge import (
+    QuinticBridgeError,
+    select_quintic_handoff,
+    splice_with_quintic_bridge,
+)
 from .replay_recorder import DynamicReplayRecorder
 
 
@@ -44,6 +59,9 @@ class DynamicPlanningJob:
     world: DynamicWorldSnapshot
     start: StartState
     target: PoseTarget | JointTarget
+    q_acc_start: tuple[float, ...]
+    submitted_unix_ns: int
+    bridge_start_unix_ns: int
     handoff_unix_ns: int
     deadline_unix_ns: int
 
@@ -79,6 +97,59 @@ def _parse_target(text: str) -> PoseTarget | None:
     return PoseTarget((x, y, z), (qw / norm, qx / norm, qy / norm, qz / norm))
 
 
+def _prepend_execution_prefix(
+    active_plan: TimedPlan | None,
+    selected: TrajectoryPlanResult,
+    *,
+    monitoring_start_unix_s: float,
+    bridge_start_unix_s: float,
+    sample_dt_s: float,
+) -> TrajectoryPlanResult:
+    duration = bridge_start_unix_s - monitoring_start_unix_s
+    if duration <= 0.0 or sample_dt_s <= 0.0:
+        raise ValueError("execution prefix interval is invalid")
+    count = max(2, int(math.ceil(duration / sample_dt_s)) + 1)
+    absolute_times = np.linspace(monitoring_start_unix_s, bridge_start_unix_s, count)
+    if active_plan is None:
+        first = selected.points[0]
+        prefix = [
+            TrajectoryPlanPoint(
+                positions=list(first.positions),
+                velocities=list(first.velocities or np.zeros(len(first.positions))),
+                accelerations=list(first.accelerations or np.zeros(len(first.positions))),
+                time_from_start_s=float(stamp - monitoring_start_unix_s),
+            )
+            for stamp in absolute_times
+        ]
+    else:
+        prefix = []
+        for stamp in absolute_times:
+            point = active_plan.predict_point(float(stamp))
+            prefix.append(
+                TrajectoryPlanPoint(
+                    positions=list(point.positions),
+                    velocities=list(point.velocities or np.zeros(len(point.positions))),
+                    accelerations=list(point.accelerations or np.zeros(len(point.positions))),
+                    time_from_start_s=float(stamp - monitoring_start_unix_s),
+                )
+            )
+    merged = prefix + [
+        TrajectoryPlanPoint(
+            positions=list(point.positions),
+            velocities=None if point.velocities is None else list(point.velocities),
+            accelerations=None if point.accelerations is None else list(point.accelerations),
+            time_from_start_s=duration + point.time_from_start_s,
+        )
+        for point in selected.points[1:]
+    ]
+    return TrajectoryPlanResult(
+        valid=True,
+        joint_names=list(selected.joint_names or []),
+        points=merged,
+        diagnostics=dict(selected.diagnostics),
+    )
+
+
 class MpdDynamicReplanNode(Node):
     def __init__(self) -> None:
         super().__init__("mpd_dynamic_replanner")
@@ -109,6 +180,22 @@ class MpdDynamicReplanNode(Node):
             "max_q_jump_rad": 0.03,
             "max_dq_jump_rad_s": 0.20,
             "max_ddq_jump_rad_s2": 2.0,
+            "bridge_minimum_duration_s": 0.20,
+            "bridge_sample_dt_s": 0.02,
+            "bridge_max_velocity_rad_s": 1.5,
+            "bridge_max_acceleration_rad_s2": 3.0,
+            "bridge_max_jerk_rad_s3": 15.0,
+            "bridge_max_active_deviation_rad": 0.08,
+            "comparison_horizon_s": 2.0,
+            "comparison_sample_dt_s": 0.02,
+            "preferred_clearance_m": 0.10,
+            "cost_kinematic_weight": 1.0,
+            "cost_clearance_weight": 4.0,
+            "cost_mpd_weight": 0.10,
+            "cost_bridge_weight": 0.10,
+            "cost_switch_penalty": 0.02,
+            "switching_hysteresis": 0.02,
+            "minimum_commit_interval_s": 1.0,
             "guard_rate_hz": 20.0,
             "guard_lookahead_s": 2.0,
             "guard_check_dt_s": 0.02,
@@ -150,6 +237,40 @@ class MpdDynamicReplanNode(Node):
             "max_dq_jump_rad_s": float(value("max_dq_jump_rad_s")),
             "max_ddq_jump_rad_s2": float(value("max_ddq_jump_rad_s2")),
         }
+        self._bridge_options = {
+            "minimum_duration_s": float(value("bridge_minimum_duration_s")),
+            "sample_dt_s": float(value("bridge_sample_dt_s")),
+            "max_velocity_rad_s": float(value("bridge_max_velocity_rad_s")),
+            "max_acceleration_rad_s2": float(value("bridge_max_acceleration_rad_s2")),
+            "max_jerk_rad_s3": float(value("bridge_max_jerk_rad_s3")),
+        }
+        self._bridge_max_active_deviation_rad = float(
+            value("bridge_max_active_deviation_rad")
+        )
+        self._comparison_horizon_s = float(value("comparison_horizon_s"))
+        self._comparison_sample_dt_s = float(value("comparison_sample_dt_s"))
+        self._preferred_clearance_m = float(value("preferred_clearance_m"))
+        self._cost_weights = {
+            "kinematic": float(value("cost_kinematic_weight")),
+            "clearance": float(value("cost_clearance_weight")),
+            "mpd": float(value("cost_mpd_weight")),
+            "bridge": float(value("cost_bridge_weight")),
+            "switch": float(value("cost_switch_penalty")),
+        }
+        self._switching_hysteresis = float(value("switching_hysteresis"))
+        self._minimum_commit_interval_s = float(value("minimum_commit_interval_s"))
+        if any(option <= 0.0 for option in self._bridge_options.values()):
+            raise ValueError("quintic bridge durations, sampling, and limits must be positive")
+        if (
+            self._comparison_horizon_s <= 0.0
+            or self._comparison_sample_dt_s <= 0.0
+            or self._minimum_commit_interval_s < 0.0
+            or self._switching_hysteresis < 0.0
+            or self._bridge_max_active_deviation_rad <= 0.0
+        ):
+            raise ValueError("dynamic handoff comparison parameters are invalid")
+        if any(weight < 0.0 for weight in self._cost_weights.values()):
+            raise ValueError("dynamic handoff cost weights must be non-negative")
         self._brake_options = {
             "max_deceleration_rad_s2": float(value("brake_max_deceleration_rad_s2")),
             "minimum_duration_s": float(value("brake_minimum_duration_s")),
@@ -188,6 +309,10 @@ class MpdDynamicReplanNode(Node):
         self._braking = False
         self._last_guard_reason = "not_checked"
         self._last_guard_clearance_m = math.inf
+        self._last_commit_unix_s = -math.inf
+        self._last_switch_decision = "not_evaluated"
+        self._last_old_cost = math.inf
+        self._last_new_cost = math.inf
         replay_record_dir = str(value("replay_record_dir"))
         self._replay_recorder = (
             DynamicReplayRecorder(
@@ -213,6 +338,9 @@ class MpdDynamicReplanNode(Node):
                 "world_revalidation_rejected",
                 "guard_brakes",
                 "no_handoff_brakes",
+                "no_bridge_retry",
+                "hysteresis_kept_old",
+                "minimum_interval_kept_old",
                 "goal_submitted",
                 "goal_accepted",
                 "goal_terminal",
@@ -381,6 +509,7 @@ class MpdDynamicReplanNode(Node):
                 "world_version": job.world.version,
                 "handoff_unix_ns": job.handoff_unix_ns,
                 "deadline_unix_ns": job.deadline_unix_ns,
+                "q_acc_start": list(job.q_acc_start),
             },
         )
 
@@ -396,41 +525,58 @@ class MpdDynamicReplanNode(Node):
             self._controlled_brake("stale_dynamic_world", clear_target=True)
             return
         now = time.time()
-        earliest = now + self._planning_budget_s
+        planning_deadline = now + self._planning_budget_s
+        bridge_start = planning_deadline + max(
+            self._command_lead_s, self._commit_margin_s
+        )
         latest_for_new_horizon = world.valid_until_unix_ns * 1e-9 - self._trajectory_duration_s
         handoff = None
+        bridge_duration = None
         if self._active_plan is not None and self._active_collision_plan is not None:
-            choice = select_earliest_low_speed_handoff(
+            choice = select_quintic_handoff(
                 active_plan=self._active_plan,
                 collision_plan=self._active_collision_plan,
                 world=world,
                 guard=self._guard,
                 now_unix_s=now,
-                earliest_unix_s=earliest,
-                latest_unix_s=min(now + self._handoff_search_horizon_s, latest_for_new_horizon),
+                bridge_start_unix_s=bridge_start,
+                latest_handoff_unix_s=min(
+                    now + self._handoff_search_horizon_s, latest_for_new_horizon
+                ),
                 step_s=self._handoff_step_s,
-                max_speed_rad_s=self._splice_options["max_handoff_speed_rad_s"],
+                **self._bridge_options,
             )
             handoff = choice.handoff_unix_s
+            bridge_duration = choice.bridge_duration_s
         else:
-            speed = float(np.max(np.abs(self._state.velocities or np.zeros(7))))
-            if speed <= self._splice_options["max_handoff_speed_rad_s"] and earliest <= latest_for_new_horizon:
-                handoff = earliest
+            bridge_duration = self._bridge_options["minimum_duration_s"]
+            candidate_handoff = bridge_start + bridge_duration
+            if candidate_handoff <= latest_for_new_horizon:
+                handoff = candidate_handoff
         if handoff is None:
-            self._counters["no_handoff_brakes"] += 1
-            self._controlled_brake("no_dynamic_safe_low_speed_handoff", clear_target=True)
+            self._counters["no_bridge_retry"] += 1
+            self._last_switch_decision = "no_dynamic_safe_quintic_bridge_retry"
+            # A failed replacement search is not itself a safety event.  The
+            # independent 20 Hz guard owns braking while the old command remains safe.
             return
         try:
-            start = (
-                self._active_plan.predict(handoff)
-                if self._active_plan is not None
-                else StartState(
+            if self._active_plan is not None:
+                handoff_point = self._active_plan.predict_point(handoff)
+                start = StartState(
+                    list(self._active_plan.result.joint_names or []),
+                    list(handoff_point.positions),
+                    list(handoff_point.velocities or np.zeros(7)),
+                    handoff,
+                )
+                q_acc_start = tuple(handoff_point.accelerations or np.zeros(7))
+            else:
+                start = StartState(
                     self._state.joint_names,
                     self._state.positions,
                     self._state.velocities,
                     handoff,
                 )
-            )
+                q_acc_start = tuple(np.zeros(7))
         except ValueError as error:
             self.get_logger().warning(f"handoff prediction failed: {error}")
             return
@@ -441,8 +587,11 @@ class MpdDynamicReplanNode(Node):
             world,
             start,
             self._target,
+            q_acc_start,
+            int(now * 1e9),
+            int(bridge_start * 1e9),
             handoff_ns,
-            handoff_ns - int(self._commit_margin_s * 1e9),
+            int(planning_deadline * 1e9),
         )
         self._planner.submit(job.generation, job)
         self._counters["submitted"] += 1
@@ -487,9 +636,9 @@ class MpdDynamicReplanNode(Node):
         if latest_world is None or self._state is None:
             return False
         handoff = job.handoff_unix_ns * 1e-9
-        new_collision = collision_plan_from_result(result, handoff)
-        commit_start = time.time() + self._command_lead_s
+        bridge_start = job.bridge_start_unix_ns * 1e-9
         if self._plan_only:
+            new_collision = collision_plan_from_result(result, handoff)
             try:
                 risk = self._guard.validate(
                     new_collision,
@@ -524,29 +673,46 @@ class MpdDynamicReplanNode(Node):
                 handoff_unix_s=handoff,
             )
             return True
+
+        now = time.time()
+        if bridge_start <= now + self._command_lead_s:
+            self._counters["deadline_miss"] += 1
+            self._last_switch_decision = "bridge_start_deadline_miss"
+            return False
         try:
-            merged = splice_for_handoff(
-                current_state=self._state,
-                active_plan=self._active_plan,
-                new_plan=result,
-                commit_start_unix_s=commit_start,
-                handoff_unix_s=handoff,
-                **self._splice_options,
-            )
-            merged_collision = splice_collision_plans(
-                self._active_collision_plan,
-                new_collision,
-                commit_start,
-                handoff,
-                self._splice_options["prefix_dt_s"],
-            )
-            risk = self._guard.validate(
-                merged_collision,
-                latest_world,
-                commit_start,
-                float(merged_collision.absolute_times_s[-1]),
-            )
-        except (HandoffValidationError, KeyError, ValueError) as error:
+            if self._active_plan is None:
+                bridge_initial = StartState(
+                    list(self._state.joint_names),
+                    list(self._state.positions),
+                    list(self._state.velocities or np.zeros(7)),
+                    bridge_start,
+                )
+                bridge_initial_acceleration = np.zeros(7)
+            else:
+                expected_now = self._active_plan.predict(now)
+                drift = float(
+                    np.max(
+                        np.abs(
+                            np.asarray(self._state.positions)
+                            - np.asarray(expected_now.positions)
+                        )
+                    )
+                )
+                if drift > self._splice_options["max_start_drift_rad"]:
+                    raise QuinticBridgeError(
+                        f"active-plan drift {drift:.6f} rad exceeds configured limit"
+                    )
+                initial_point = self._active_plan.predict_point(bridge_start)
+                bridge_initial = StartState(
+                    list(self._active_plan.result.joint_names or []),
+                    list(initial_point.positions),
+                    list(initial_point.velocities or np.zeros(7)),
+                    bridge_start,
+                )
+                bridge_initial_acceleration = np.asarray(
+                    initial_point.accelerations or np.zeros(7), dtype=np.float64
+                )
+        except (QuinticBridgeError, ValueError) as error:
             self._counters["handoff_rejected"] += 1
             self.get_logger().warning(f"dynamic handoff rejected: {error}")
             self._record_replay(
@@ -555,35 +721,286 @@ class MpdDynamicReplanNode(Node):
                 result,
                 start_unix_s=handoff,
             )
-            self._controlled_brake("handoff_validation_failed", clear_target=True)
             return False
-        current_world = self._world_manager.snapshot
-        if not risk.safe or current_world is None or current_world.version != latest_world.version:
+
+        candidates = result.diagnostics.get("top_k_candidates", [result])
+        if not isinstance(candidates, list) or not candidates:
+            self._counters["invalid"] += 1
+            return False
+        raw_scores = np.asarray(
+            [candidate.diagnostics.get("mpd_selection_score", 0.0) for candidate in candidates],
+            dtype=np.float64,
+        )
+        score_range = float(np.ptp(raw_scores))
+        normalized_scores = (
+            np.zeros_like(raw_scores)
+            if score_range <= 1e-12
+            else (raw_scores - float(raw_scores.min())) / score_range
+        )
+
+        selected = None
+        selected_collision = None
+        selected_risk = None
+        selected_decision = None
+        old_safe = self._active_plan is None
+        for _attempt in range(2):
+            evaluation_world = self._world_manager.snapshot
+            if evaluation_world is None:
+                return False
+            candidate_costs = []
+            candidate_artifacts = {}
+            for index, candidate in enumerate(candidates):
+                try:
+                    merged = splice_with_quintic_bridge(
+                        current_state=bridge_initial,
+                        current_acceleration=bridge_initial_acceleration,
+                        new_plan=candidate,
+                        duration_s=handoff - bridge_start,
+                        sample_dt_s=self._bridge_options["sample_dt_s"],
+                        max_velocity_rad_s=self._bridge_options["max_velocity_rad_s"],
+                        max_acceleration_rad_s2=self._bridge_options[
+                            "max_acceleration_rad_s2"
+                        ],
+                        max_jerk_rad_s3=self._bridge_options["max_jerk_rad_s3"],
+                    )
+                    if self._active_plan is not None:
+                        bridge_points = [
+                            point
+                            for point in merged.points
+                            if point.time_from_start_s <= handoff - bridge_start + 1e-9
+                        ]
+                        bridge_deviation = max(
+                            float(
+                                np.max(
+                                    np.abs(
+                                        np.asarray(point.positions)
+                                        - np.asarray(
+                                            self._active_plan.predict(
+                                                bridge_start + point.time_from_start_s
+                                            ).positions
+                                        )
+                                    )
+                                )
+                            )
+                            for point in bridge_points
+                        )
+                        if bridge_deviation > self._bridge_max_active_deviation_rad:
+                            raise QuinticBridgeError(
+                                f"bridge/active deviation {bridge_deviation:.6f} rad exceeds limit"
+                            )
+                    else:
+                        bridge_deviation = 0.0
+                    new_collision = collision_plan_from_result(candidate, handoff)
+                    merged_collision = splice_collision_plans(
+                        self._active_collision_plan,
+                        new_collision,
+                        bridge_start,
+                        handoff,
+                        self._splice_options["prefix_dt_s"],
+                    )
+                    monitoring_collision = splice_collision_plans(
+                        self._active_collision_plan,
+                        merged_collision,
+                        now,
+                        bridge_start,
+                        self._splice_options["prefix_dt_s"],
+                    )
+                    risk = self._guard.validate(
+                        monitoring_collision,
+                        evaluation_world,
+                        now,
+                        float(monitoring_collision.absolute_times_s[-1]),
+                    )
+                    if not risk.safe:
+                        continue
+                    window_end = bridge_start + self._comparison_horizon_s
+                    kinematic = common_window_kinematic_cost(
+                        merged,
+                        trajectory_start_unix_s=bridge_start,
+                        window_start_unix_s=bridge_start,
+                        window_end_unix_s=window_end,
+                        max_velocity_rad_s=self._bridge_options["max_velocity_rad_s"],
+                        max_acceleration_rad_s2=self._bridge_options[
+                            "max_acceleration_rad_s2"
+                        ],
+                        max_jerk_rad_s3=self._bridge_options["max_jerk_rad_s3"],
+                        sample_dt_s=self._comparison_sample_dt_s,
+                    )
+                    clearance = clearance_cost(
+                        risk.minimum_clearance_m, self._preferred_clearance_m
+                    )
+                    bridge_stats = merged.diagnostics["bridge"]
+                    bridge_cost = (
+                        float(bridge_stats["duration_s"])
+                        / max(self._comparison_horizon_s, 1e-9)
+                        + float(bridge_stats["velocity_utilization"])
+                        + float(bridge_stats["acceleration_utilization"])
+                        + float(bridge_stats["jerk_utilization"])
+                    ) / 4.0
+                    total = (
+                        self._cost_weights["kinematic"] * kinematic
+                        + self._cost_weights["clearance"] * clearance
+                        + self._cost_weights["mpd"] * float(normalized_scores[index])
+                        + self._cost_weights["bridge"] * bridge_cost
+                        + (self._cost_weights["switch"] if self._active_plan is not None else 0.0)
+                    )
+                    candidate_costs.append(
+                        CandidateCost(
+                            index,
+                            total,
+                            kinematic,
+                            clearance,
+                            float(normalized_scores[index]),
+                            bridge_cost,
+                        )
+                    )
+                    merged.diagnostics.update(
+                        bridge_active_deviation_rad=bridge_deviation,
+                        composite_cost={
+                            "total": total,
+                            "kinematic": kinematic,
+                            "clearance": clearance,
+                            "mpd": float(normalized_scores[index]),
+                            "bridge": bridge_cost,
+                        },
+                    )
+                    candidate_artifacts[index] = (merged, monitoring_collision, risk)
+                except (KeyError, QuinticBridgeError, ValueError):
+                    continue
+
+            old_cost = math.inf
+            old_safe = False
+            if self._active_plan is not None and self._active_collision_plan is not None:
+                window_end = bridge_start + self._comparison_horizon_s
+                try:
+                    old_risk = self._guard.validate(
+                        self._active_collision_plan,
+                        evaluation_world,
+                        bridge_start,
+                        window_end,
+                    )
+                    old_kinematic = common_window_kinematic_cost(
+                        self._active_plan.result,
+                        trajectory_start_unix_s=self._active_plan.start_unix_s,
+                        window_start_unix_s=bridge_start,
+                        window_end_unix_s=window_end,
+                        max_velocity_rad_s=self._bridge_options["max_velocity_rad_s"],
+                        max_acceleration_rad_s2=self._bridge_options[
+                            "max_acceleration_rad_s2"
+                        ],
+                        max_jerk_rad_s3=self._bridge_options["max_jerk_rad_s3"],
+                        sample_dt_s=self._comparison_sample_dt_s,
+                    )
+                    old_safe = old_risk.safe and math.isfinite(old_kinematic)
+                    if old_safe:
+                        old_cost = (
+                            self._cost_weights["kinematic"] * old_kinematic
+                            + self._cost_weights["clearance"]
+                            * clearance_cost(
+                                old_risk.minimum_clearance_m,
+                                self._preferred_clearance_m,
+                            )
+                        )
+                except ValueError:
+                    old_safe = False
+            decision = choose_hysteretic_switch(
+                candidate_costs,
+                old_cost=old_cost,
+                old_safe=old_safe,
+                minimum_commit_interval_elapsed=(
+                    self._active_plan is None
+                    or bridge_start - self._last_commit_unix_s
+                    >= self._minimum_commit_interval_s
+                ),
+                switching_hysteresis=self._switching_hysteresis,
+            )
+            current_world = self._world_manager.snapshot
+            if current_world is None:
+                return False
+            if current_world.version != evaluation_world.version:
+                continue
+            selected_decision = decision
+            if decision.candidate_index is not None:
+                selected, selected_collision, selected_risk = candidate_artifacts[
+                    decision.candidate_index
+                ]
+            break
+
+        if selected_decision is None:
             self._counters["world_revalidation_rejected"] += 1
+            self._last_switch_decision = "world_changed_during_top_k_revalidation"
+            return False
+        self._last_switch_decision = selected_decision.reason
+        self._last_old_cost = selected_decision.old_cost
+        self._last_new_cost = selected_decision.new_cost
+        if selected is None or selected_collision is None or selected_risk is None:
+            if selected_decision.reason == "switching_hysteresis":
+                self._counters["hysteresis_kept_old"] += 1
+            elif selected_decision.reason == "minimum_commit_interval":
+                self._counters["minimum_interval_kept_old"] += 1
             self._record_replay(
                 "record_rejected",
                 job.generation,
                 result,
                 start_unix_s=handoff,
             )
-            self._controlled_brake("latest_world_revalidation_failed", clear_target=True)
+            if not old_safe and selected_decision.reason == "no_latest_world_safe_candidate":
+                self._controlled_brake("no_latest_world_safe_candidate", clear_target=True)
             return False
-        message = self._to_message(merged, int(commit_start * 1e9))
+
+        final_world = self._world_manager.snapshot
+        if final_world is None:
+            return False
+        final_risk = self._guard.validate(
+            selected_collision,
+            final_world,
+            now,
+            float(selected_collision.absolute_times_s[-1]),
+        )
+        world_after_final_check = self._world_manager.snapshot
+        if (
+            not final_risk.safe
+            or world_after_final_check is None
+            or world_after_final_check.version != final_world.version
+        ):
+            self._counters["world_revalidation_rejected"] += 1
+            self._last_switch_decision = "latest_world_final_revalidation_failed"
+            if not old_safe:
+                self._controlled_brake(
+                    "latest_world_final_revalidation_failed", clear_target=True
+                )
+            return False
+
+        selected.diagnostics["phase_timing"] = {
+            "planning_submitted_unix_s": job.submitted_unix_ns * 1e-9,
+            "bridge_start_unix_s": bridge_start,
+            "handoff_unix_s": handoff,
+            "old_continuation_s": bridge_start - job.submitted_unix_ns * 1e-9,
+            "bridge_s": handoff - bridge_start,
+            "mpd_suffix_s": selected.points[-1].time_from_start_s - (handoff - bridge_start),
+        }
+        selected.diagnostics["switch_decision"] = selected_decision.__dict__
+        message = self._to_message(selected, job.bridge_start_unix_ns)
         self._trajectory_publisher.publish(message)
         if self._execution is None or not self._execution.submit(job.generation, message):
             self._counters["worker_error"] += 1
             return False
-        self._candidate_plans[job.generation] = (
-            TimedPlan(merged, commit_start),
-            merged_collision,
+        monitored = _prepend_execution_prefix(
+            self._active_plan,
+            selected,
+            monitoring_start_unix_s=now,
+            bridge_start_unix_s=bridge_start,
+            sample_dt_s=self._splice_options["prefix_dt_s"],
         )
+        self._candidate_plans[job.generation] = (TimedPlan(monitored, now), selected_collision)
         self._record_replay(
             "record_candidate",
             job.generation,
-            merged,
-            start_unix_s=commit_start,
+            selected,
+            start_unix_s=bridge_start,
             handoff_unix_s=handoff,
         )
+        self._last_commit_unix_s = bridge_start
         self._counters["goal_submitted"] += 1
         return True
 
@@ -665,6 +1082,8 @@ class MpdDynamicReplanNode(Node):
             output.positions = list(point.positions)
             if point.velocities is not None:
                 output.velocities = list(point.velocities)
+            if point.accelerations is not None:
+                output.accelerations = list(point.accelerations)
             output.time_from_start = _duration(point.time_from_start_s)
             message.points.append(output)
         return message
@@ -687,6 +1106,9 @@ class MpdDynamicReplanNode(Node):
                 "braking": self._braking,
                 "guard_reason": self._last_guard_reason,
                 "guard_minimum_clearance_m": self._last_guard_clearance_m,
+                "switch_decision": self._last_switch_decision,
+                "old_common_window_cost": self._last_old_cost,
+                "new_common_window_cost": self._last_new_cost,
                 "latency_samples": len(self._latencies_s),
                 **self._counters,
             },

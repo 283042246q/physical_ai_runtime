@@ -28,6 +28,7 @@ class _RecordedPlan:
     active_until_s: float | None = None
     handoff_s: float | None = None
     duration_s: float = 0.0
+    phase_timing: dict[str, float] | None = None
 
 
 class DynamicReplayRecorder:
@@ -104,21 +105,32 @@ class DynamicReplayRecorder:
         return plan_id
 
     @staticmethod
-    def _arrays(result: TrajectoryPlanResult) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _arrays(
+        result: TrajectoryPlanResult,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         positions = np.asarray([point.positions for point in result.points], dtype=np.float64)
         times = np.asarray([point.time_from_start_s for point in result.points], dtype=np.float64)
         velocities = np.asarray(
             [point.velocities if point.velocities is not None else np.zeros(positions.shape[1]) for point in result.points],
             dtype=np.float64,
         )
+        accelerations = np.asarray(
+            [
+                point.accelerations
+                if point.accelerations is not None
+                else np.zeros(positions.shape[1])
+                for point in result.points
+            ],
+            dtype=np.float64,
+        )
         if positions.ndim != 2 or positions.shape[0] < 2 or positions.shape[1] not in (7, 9):
             raise ValueError("recorded trajectory positions must have shape [H,7] or [H,9]")
         if times.shape != (len(positions),) or np.any(np.diff(times) <= 0.0):
             raise ValueError("recorded trajectory time must be strictly increasing")
-        return positions, velocities, times
+        return positions, velocities, accelerations, times
 
     def _write_plan(self, plan_id: str, result: TrajectoryPlanResult) -> tuple[str, float]:
-        positions, velocities, times = self._arrays(result)
+        positions, velocities, accelerations, times = self._arrays(result)
         relative = Path("plans") / plan_id / "trajectory.npz"
         destination = self.output_dir / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -126,6 +138,7 @@ class DynamicReplayRecorder:
             destination,
             positions=positions,
             velocities=velocities,
+            accelerations=accelerations,
             time_from_start=times,
             joint_names=np.asarray(result.joint_names or [], dtype=np.str_),
         )
@@ -157,6 +170,43 @@ class DynamicReplayRecorder:
                     else self._relative_s(int(handoff_unix_s * 1e9))
                 ),
                 duration_s=duration,
+                phase_timing=(
+                    None
+                    if "phase_timing" not in result.diagnostics
+                    else {
+                        "planning_submitted_s": self._relative_s(
+                            int(
+                                result.diagnostics["phase_timing"][
+                                    "planning_submitted_unix_s"
+                                ]
+                                * 1e9
+                            )
+                        ),
+                        "bridge_start_s": self._relative_s(
+                            int(
+                                result.diagnostics["phase_timing"][
+                                    "bridge_start_unix_s"
+                                ]
+                                * 1e9
+                            )
+                        ),
+                        "handoff_s": self._relative_s(
+                            int(
+                                result.diagnostics["phase_timing"]["handoff_unix_s"]
+                                * 1e9
+                            )
+                        ),
+                        "old_continuation_s": float(
+                            result.diagnostics["phase_timing"]["old_continuation_s"]
+                        ),
+                        "bridge_s": float(
+                            result.diagnostics["phase_timing"]["bridge_s"]
+                        ),
+                        "mpd_suffix_s": float(
+                            result.diagnostics["phase_timing"]["mpd_suffix_s"]
+                        ),
+                    }
+                ),
             )
             self._plans[plan_id] = plan
             self._generation_to_plan[int(generation)] = plan_id
@@ -287,6 +337,8 @@ class DynamicReplayRecorder:
                     active_from_s=plan.active_from_s,
                     active_until_s=active_until_s,
                 )
+            if plan.phase_timing is not None:
+                payload["phase_timing"] = plan.phase_timing
             plans.append(payload)
         manifest = {
             "schema": "mpd_dynamic_replay",

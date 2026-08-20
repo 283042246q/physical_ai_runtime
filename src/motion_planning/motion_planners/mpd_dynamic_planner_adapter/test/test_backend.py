@@ -51,10 +51,17 @@ def test_dynamic_backend_uploads_exact_version_and_reads_collision_spheres(tmp_p
         path,
         positions=np.zeros((2, 7)),
         velocities=np.zeros((2, 7)),
+        accelerations=np.zeros((2, 7)),
         time_from_start=np.asarray([0.0, 10.0]),
         joint_names=np.asarray(NAMES),
         collision_sphere_positions=np.zeros((2, 56, 3)),
         collision_sphere_radii=np.full(56, 0.01),
+        topk_positions=np.zeros((2, 2, 7)),
+        topk_velocities=np.zeros((2, 2, 7)),
+        topk_accelerations=np.zeros((2, 2, 7)),
+        topk_scores=np.asarray([0.1, 0.2]),
+        topk_source_candidate_indices=np.asarray([3, 7]),
+        topk_collision_sphere_positions=np.zeros((2, 2, 56, 3)),
     )
     backend = DynamicMpdGlobalTrajectoryBackend("/tmp/not-used.sock")
     backend.client = FakeClient(path)
@@ -80,6 +87,9 @@ def test_dynamic_backend_uploads_exact_version_and_reads_collision_spheres(tmp_p
     assert result.valid
     assert result.diagnostics["world_version"] == 4
     assert result.diagnostics["collision_sphere_positions"].shape == (2, 56, 3)
+    assert result.diagnostics["top_k_count"] == 2
+    assert len(result.diagnostics["top_k_candidates"]) == 2
+    assert result.points[0].accelerations == [0.0] * 7
     assert backend.client.updated is snapshot
 
 

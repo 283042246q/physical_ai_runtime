@@ -26,6 +26,24 @@ mpd_dynamic_replanner:
     max_q_jump_rad: 0.03
     max_dq_jump_rad_s: 0.20
     max_ddq_jump_rad_s2: 2.0
+    # Phase 4 uses a limit-aware quintic bridge at any speed.  The legacy
+    # max_handoff_speed_rad_s parameter above is retained only for config compatibility.
+    bridge_minimum_duration_s: 0.20
+    bridge_sample_dt_s: 0.02
+    bridge_max_velocity_rad_s: 1.5
+    bridge_max_acceleration_rad_s2: 3.0
+    bridge_max_jerk_rad_s3: 15.0
+    bridge_max_active_deviation_rad: 0.08
+    comparison_horizon_s: 2.0
+    comparison_sample_dt_s: 0.02
+    preferred_clearance_m: 0.10
+    cost_kinematic_weight: 1.0
+    cost_clearance_weight: 4.0
+    cost_mpd_weight: 0.10
+    cost_bridge_weight: 0.10
+    cost_switch_penalty: 0.02
+    switching_hysteresis: 0.02
+    minimum_commit_interval_s: 1.0
     guard_rate_hz: 20.0
     guard_lookahead_s: 2.0
     guard_check_dt_s: 0.02

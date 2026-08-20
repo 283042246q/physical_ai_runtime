@@ -121,38 +121,112 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
             with np.load(path, allow_pickle=False) as data:
                 positions = np.asarray(data["positions"], dtype=np.float64)
                 velocities = np.asarray(data["velocities"], dtype=np.float64)
+                accelerations = np.asarray(data["accelerations"], dtype=np.float64)
                 stamps = np.asarray(data["time_from_start"], dtype=np.float64)
                 names = tuple(str(item) for item in data["joint_names"].tolist())
                 sphere_positions = np.asarray(
                     data["collision_sphere_positions"], dtype=np.float64
                 )
                 sphere_radii = np.asarray(data["collision_sphere_radii"], dtype=np.float64)
+                topk_positions = np.asarray(data["topk_positions"], dtype=np.float64)
+                topk_velocities = np.asarray(data["topk_velocities"], dtype=np.float64)
+                topk_accelerations = np.asarray(data["topk_accelerations"], dtype=np.float64)
+                topk_scores = np.asarray(data["topk_scores"], dtype=np.float64)
+                topk_source_indices = np.asarray(
+                    data["topk_source_candidate_indices"], dtype=np.int64
+                )
+                topk_sphere_positions = np.asarray(
+                    data["topk_collision_sphere_positions"], dtype=np.float64
+                )
             if names != EXPECTED_JOINT_NAMES or positions.ndim != 2 or positions.shape[1] != 7:
                 raise MpdClientError("dynamic trajectory joint contract mismatch")
-            if velocities.shape != positions.shape or stamps.shape != (positions.shape[0],):
+            if (
+                velocities.shape != positions.shape
+                or accelerations.shape != positions.shape
+                or stamps.shape != (positions.shape[0],)
+            ):
                 raise MpdClientError("dynamic trajectory arrays are inconsistent")
             if sphere_positions.shape[:1] != positions.shape[:1] or sphere_positions.shape[-1] != 3:
                 raise MpdClientError("collision sphere position array is inconsistent")
             if sphere_radii.shape != (sphere_positions.shape[1],):
                 raise MpdClientError("collision sphere radii are inconsistent")
-            arrays = (positions, velocities, stamps, sphere_positions, sphere_radii)
+            topk_shape = topk_positions.shape
+            if (
+                len(topk_shape) != 3
+                or topk_shape[1:] != positions.shape
+                or topk_velocities.shape != topk_shape
+                or topk_accelerations.shape != topk_shape
+                or topk_scores.shape != (topk_shape[0],)
+                or topk_source_indices.shape != (topk_shape[0],)
+                or topk_sphere_positions.shape
+                != (topk_shape[0], *sphere_positions.shape)
+            ):
+                raise MpdClientError("dynamic top-K trajectory arrays are inconsistent")
+            arrays = (
+                positions,
+                velocities,
+                accelerations,
+                stamps,
+                sphere_positions,
+                sphere_radii,
+                topk_positions,
+                topk_velocities,
+                topk_accelerations,
+                topk_scores,
+                topk_sphere_positions,
+            )
             if not all(np.isfinite(value).all() for value in arrays):
                 raise MpdClientError("dynamic trajectory contains NaN or Inf")
             if len(stamps) < 2 or stamps[0] < 0.0 or np.any(np.diff(stamps) <= 0.0):
                 raise MpdClientError("dynamic trajectory time is not strictly increasing")
-            points = [
-                TrajectoryPlanPoint(
-                    positions=positions[index].tolist(),
-                    velocities=velocities[index].tolist(),
-                    time_from_start_s=float(stamps[index]),
+            q_start = np.asarray(self._request(start_state, target, options)["q_pos_start"])
+            dq_start = np.asarray(self._request(start_state, target, options)["q_vel_start"])
+            ddq_start = np.asarray(options.get("q_acc_start", np.zeros(7)), dtype=np.float64)
+            boundary_errors = np.asarray(
+                [
+                    np.max(np.abs(topk_positions[:, 0] - q_start)),
+                    np.max(np.abs(topk_velocities[:, 0] - dq_start)),
+                    np.max(np.abs(topk_accelerations[:, 0] - ddq_start)),
+                ]
+            )
+            if np.any(boundary_errors > 1e-5):
+                raise MpdClientError(
+                    "dynamic top-K q/dq/ddq start boundary mismatch: "
+                    f"{boundary_errors.tolist()}"
                 )
-                for index in range(len(stamps))
-            ]
-            return TrajectoryPlanResult(
-                valid=True,
-                joint_names=list(EXPECTED_JOINT_NAMES),
-                points=points,
-                diagnostics={
+
+            candidates = []
+            for candidate_index in range(topk_shape[0]):
+                points = [
+                    TrajectoryPlanPoint(
+                        positions=topk_positions[candidate_index, index].tolist(),
+                        velocities=topk_velocities[candidate_index, index].tolist(),
+                        accelerations=topk_accelerations[candidate_index, index].tolist(),
+                        time_from_start_s=float(stamps[index]),
+                    )
+                    for index in range(len(stamps))
+                ]
+                candidates.append(
+                    TrajectoryPlanResult(
+                        valid=True,
+                        joint_names=list(EXPECTED_JOINT_NAMES),
+                        points=points,
+                        diagnostics={
+                            "mpd_selection_score": float(topk_scores[candidate_index]),
+                            "mpd_source_candidate_index": int(
+                                topk_source_indices[candidate_index]
+                            ),
+                            "collision_sphere_positions": topk_sphere_positions[
+                                candidate_index
+                            ],
+                            "collision_sphere_radii": sphere_radii,
+                            "trajectory_path": str(path),
+                        },
+                    )
+                )
+            primary = candidates[0]
+            primary.diagnostics.update(
+                {
                     "request_seq": request_seq,
                     "world_version": world_version,
                     "worker_elapsed_s": response.get("elapsed_sec"),
@@ -161,8 +235,12 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                     "handoff_unix_ns": trajectory_start_ns,
                     "collision_sphere_positions": sphere_positions,
                     "collision_sphere_radii": sphere_radii,
+                    "top_k_candidates": candidates,
+                    "top_k_count": len(candidates),
+                    "start_boundary_errors": boundary_errors,
                 },
             )
+            return primary
         except (KeyError, OSError, ValueError, MpdClientError) as error:
             return TrajectoryPlanResult(
                 valid=False,

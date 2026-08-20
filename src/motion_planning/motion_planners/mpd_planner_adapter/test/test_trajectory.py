@@ -15,3 +15,18 @@ def test_future_handoff_prediction_interpolates_position_and_velocity():
     assert predicted.positions == [0.5] * 7
     assert predicted.velocities == [1.0] * 7
     assert predicted.stamp_s == 11.0
+
+
+def test_future_handoff_prediction_interpolates_acceleration_for_phase4_boundary():
+    plan = TrajectoryPlanResult(
+        valid=True,
+        joint_names=[f"fr3_joint{i}" for i in range(1, 8)],
+        points=[
+            TrajectoryPlanPoint([0.0] * 7, [0.0] * 7, 0.0, [0.0] * 7),
+            TrajectoryPlanPoint([1.0] * 7, [2.0] * 7, 2.0, [1.0] * 7),
+        ],
+    )
+
+    predicted = TimedPlan(plan, start_unix_s=10.0).predict_point(11.0)
+
+    assert predicted.accelerations == [0.5] * 7
