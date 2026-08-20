@@ -46,6 +46,20 @@ def test_hysteresis_and_minimum_interval_keep_safe_old_trajectory():
     assert hysteresis.reason == "switching_hysteresis"
 
 
+def test_exhaustion_reserve_overrides_hysteresis_after_minimum_interval():
+    decision = choose_hysteretic_switch(
+        [_candidate(0, 1.05)],
+        old_cost=1.0,
+        old_safe=True,
+        minimum_commit_interval_elapsed=True,
+        switching_hysteresis=0.1,
+        forced_switch_reason="old_trajectory_exhaustion_reserve",
+    )
+
+    assert decision.candidate_index == 0
+    assert decision.reason == "old_trajectory_exhaustion_reserve"
+
+
 def test_clearance_cost_is_zero_above_preference_and_infinite_at_collision():
     assert clearance_cost(0.2, 0.1) == 0.0
     assert 0.0 < clearance_cost(0.05, 0.1) < 1.0

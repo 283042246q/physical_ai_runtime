@@ -176,6 +176,7 @@ class MpdDynamicReplanNode(Node):
             "command_lead_s": 0.05,
             "prefix_dt_s": 0.05,
             "max_start_drift_rad": 0.10,
+            "enforce_measured_start_drift": True,
             "max_handoff_speed_rad_s": 0.20,
             "max_q_jump_rad": 0.03,
             "max_dq_jump_rad_s": 0.20,
@@ -196,6 +197,7 @@ class MpdDynamicReplanNode(Node):
             "cost_switch_penalty": 0.02,
             "switching_hysteresis": 0.02,
             "minimum_commit_interval_s": 1.0,
+            "replacement_retry_reserve_s": 3.0,
             "guard_rate_hz": 20.0,
             "guard_lookahead_s": 2.0,
             "guard_check_dt_s": 0.02,
@@ -237,6 +239,7 @@ class MpdDynamicReplanNode(Node):
             "max_dq_jump_rad_s": float(value("max_dq_jump_rad_s")),
             "max_ddq_jump_rad_s2": float(value("max_ddq_jump_rad_s2")),
         }
+        self._enforce_measured_start_drift = bool(value("enforce_measured_start_drift"))
         self._bridge_options = {
             "minimum_duration_s": float(value("bridge_minimum_duration_s")),
             "sample_dt_s": float(value("bridge_sample_dt_s")),
@@ -259,12 +262,14 @@ class MpdDynamicReplanNode(Node):
         }
         self._switching_hysteresis = float(value("switching_hysteresis"))
         self._minimum_commit_interval_s = float(value("minimum_commit_interval_s"))
+        self._replacement_retry_reserve_s = float(value("replacement_retry_reserve_s"))
         if any(option <= 0.0 for option in self._bridge_options.values()):
             raise ValueError("quintic bridge durations, sampling, and limits must be positive")
         if (
             self._comparison_horizon_s <= 0.0
             or self._comparison_sample_dt_s <= 0.0
             or self._minimum_commit_interval_s < 0.0
+            or self._replacement_retry_reserve_s < 0.0
             or self._switching_hysteresis < 0.0
             or self._bridge_max_active_deviation_rad <= 0.0
         ):
@@ -698,7 +703,10 @@ class MpdDynamicReplanNode(Node):
                         )
                     )
                 )
-                if drift > self._splice_options["max_start_drift_rad"]:
+                if (
+                    self._enforce_measured_start_drift
+                    and drift > self._splice_options["max_start_drift_rad"]
+                ):
                     raise QuinticBridgeError(
                         f"active-plan drift {drift:.6f} rad exceeds configured limit"
                     )
@@ -903,6 +911,17 @@ class MpdDynamicReplanNode(Node):
                         )
                 except ValueError:
                     old_safe = False
+            forced_switch_reason = None
+            if self._active_plan is not None and old_safe:
+                old_remaining_s = (
+                    self._active_plan.start_unix_s
+                    + self._active_plan.result.points[-1].time_from_start_s
+                    - bridge_start
+                )
+                if old_remaining_s < (
+                    self._comparison_horizon_s + self._replacement_retry_reserve_s
+                ):
+                    forced_switch_reason = "old_trajectory_exhaustion_reserve"
             decision = choose_hysteretic_switch(
                 candidate_costs,
                 old_cost=old_cost,
@@ -913,6 +932,7 @@ class MpdDynamicReplanNode(Node):
                     >= self._minimum_commit_interval_s
                 ),
                 switching_hysteresis=self._switching_hysteresis,
+                forced_switch_reason=forced_switch_reason,
             )
             current_world = self._world_manager.snapshot
             if current_world is None:

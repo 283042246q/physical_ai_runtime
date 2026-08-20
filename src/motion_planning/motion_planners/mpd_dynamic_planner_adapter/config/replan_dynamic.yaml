@@ -22,6 +22,7 @@ mpd_dynamic_replanner:
     command_lead_s: 0.05
     prefix_dt_s: 0.05
     max_start_drift_rad: 0.10
+    enforce_measured_start_drift: true
     max_handoff_speed_rad_s: 0.20
     max_q_jump_rad: 0.03
     max_dq_jump_rad_s: 0.20
@@ -44,6 +45,8 @@ mpd_dynamic_replanner:
     cost_switch_penalty: 0.02
     switching_hysteresis: 0.02
     minimum_commit_interval_s: 1.0
+    # Keep enough command horizon for one failed plan and a subsequent retry.
+    replacement_retry_reserve_s: 3.0
     guard_rate_hz: 20.0
     guard_lookahead_s: 2.0
     guard_check_dt_s: 0.02

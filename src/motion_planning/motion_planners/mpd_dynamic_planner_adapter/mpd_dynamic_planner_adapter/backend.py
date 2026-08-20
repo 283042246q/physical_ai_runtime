@@ -108,9 +108,15 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                 deadline_unix_ns=deadline_ns,
             )
             if response.get("status") != "OK":
+                error = response.get("error")
+                detail = (
+                    f"{error.get('type')}: {error.get('message')}"
+                    if isinstance(error, dict)
+                    else str(response.get("reason", response.get("status", "worker_error")))
+                )
                 return TrajectoryPlanResult(
                     valid=False,
-                    reason=str(response.get("reason", response.get("status", "worker_error"))),
+                    reason=detail,
                     diagnostics={"worker_response": response},
                 )
             if response.get("request_seq") != request_seq or response.get("world_version") != world_version:

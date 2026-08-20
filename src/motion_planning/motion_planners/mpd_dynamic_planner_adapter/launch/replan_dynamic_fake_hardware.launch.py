@@ -38,6 +38,7 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "plan_only": LaunchConfiguration("plan_only"),
             "plan_rate_hz": LaunchConfiguration("plan_rate_hz"),
+            "enforce_measured_start_drift": "false",
             "target_pose_xyzw": LaunchConfiguration("target_pose_xyzw"),
             "scene_id": LaunchConfiguration("scene_id"),
             "socket_path": LaunchConfiguration("socket_path"),

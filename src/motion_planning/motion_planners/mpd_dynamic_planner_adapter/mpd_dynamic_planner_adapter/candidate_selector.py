@@ -114,6 +114,7 @@ def choose_hysteretic_switch(
     old_safe: bool,
     minimum_commit_interval_elapsed: bool,
     switching_hysteresis: float,
+    forced_switch_reason: str | None = None,
 ) -> SwitchDecision:
     finite = [candidate for candidate in candidates if math.isfinite(candidate.total)]
     if not finite:
@@ -124,6 +125,14 @@ def choose_hysteretic_switch(
     improvement = old_cost - best.total
     if not minimum_commit_interval_elapsed:
         return SwitchDecision(None, "minimum_commit_interval", old_cost, best.total, improvement)
+    if forced_switch_reason is not None:
+        return SwitchDecision(
+            best.index,
+            forced_switch_reason,
+            old_cost,
+            best.total,
+            improvement,
+        )
     if improvement < switching_hysteresis:
         return SwitchDecision(None, "switching_hysteresis", old_cost, best.total, improvement)
     return SwitchDecision(best.index, "composite_cost_improved", old_cost, best.total, improvement)
