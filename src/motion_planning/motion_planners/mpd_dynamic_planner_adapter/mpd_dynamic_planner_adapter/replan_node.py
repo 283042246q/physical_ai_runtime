@@ -323,9 +323,11 @@ class MpdDynamicReplanNode(Node):
         self._target: PoseTarget | JointTarget | None = _parse_target(str(value("target_pose_xyzw")))
         self._active_plan: TimedPlan | None = None
         self._active_collision_plan: TimedCollisionPlan | None = None
+        self._active_plan_id: int | None = None
         self._candidate_plans: dict[int, tuple[TimedPlan, TimedCollisionPlan | None]] = {}
         self._emergency_stopped = False
         self._braking = False
+        self._goal_reached = False
         self._last_guard_reason = "not_checked"
         self._last_guard_clearance_m = math.inf
         self._last_commit_unix_s = -math.inf
@@ -361,6 +363,7 @@ class MpdDynamicReplanNode(Node):
                 "hysteresis_kept_old",
                 "minimum_interval_kept_old",
                 "near_goal_kept_old",
+                "terminal_hold_replans",
                 "goal_submitted",
                 "goal_accepted",
                 "goal_terminal",
@@ -467,6 +470,7 @@ class MpdDynamicReplanNode(Node):
             _stamp_s(message.header.stamp),
         )
         self._braking = False
+        self._goal_reached = False
         self._invalidate()
 
     def _on_joint_target(self, message: JointState) -> None:
@@ -479,6 +483,7 @@ class MpdDynamicReplanNode(Node):
             return
         self._target = JointTarget(list(EXPECTED_JOINT_NAMES), target, _stamp_s(message.header.stamp))
         self._braking = False
+        self._goal_reached = False
         self._invalidate()
 
     def _on_stop(self, message: Bool) -> None:
@@ -490,8 +495,10 @@ class MpdDynamicReplanNode(Node):
             return
         self._emergency_stopped = True
         self._target = None
+        self._goal_reached = False
         self._active_plan = None
         self._active_collision_plan = None
+        self._active_plan_id = None
         self._invalidate()
         if self._execution is not None:
             self._execution.cancel()
@@ -572,9 +579,22 @@ class MpdDynamicReplanNode(Node):
                     except ValueError:
                         pass
                 if terminal_risk is not None and terminal_risk.safe:
-                    self._last_switch_decision = "safe_near_goal_terminal_hold"
+                    self._last_switch_decision = (
+                        "safe_goal_terminal_hold"
+                        if self._goal_reached
+                        else "safe_near_goal_terminal_hold"
+                    )
                     self._counters["near_goal_kept_old"] += 1
                     return
+                if self._goal_reached:
+                    self._last_switch_decision = (
+                        "terminal_hold_predicted_unsafe_replan"
+                    )
+                    self._counters["terminal_hold_replans"] += 1
+                    self.get_logger().warning(
+                        "terminal hold is not safe over the latest prediction "
+                        "horizon; requesting a replacement trajectory"
+                    )
         planning_deadline = now + self._planning_budget_s
         bridge_start = planning_deadline + max(
             self._command_lead_s, self._commit_margin_s
@@ -1177,6 +1197,7 @@ class MpdDynamicReplanNode(Node):
         self._braking = True
         if clear_target:
             self._target = None
+        self._goal_reached = False
         self._invalidate()
         if self._state is None:
             if self._execution is not None:
@@ -1208,6 +1229,9 @@ class MpdDynamicReplanNode(Node):
         candidate = self._candidate_plans.get(plan_id)
         if candidate is not None:
             self._active_plan, self._active_collision_plan = candidate
+            self._active_plan_id = plan_id
+            if self._active_collision_plan is not None:
+                self._goal_reached = False
         self._record_replay("record_activation", plan_id)
         self._counters["goal_accepted"] += 1
 
@@ -1219,18 +1243,28 @@ class MpdDynamicReplanNode(Node):
             and self._execution.plan_id is None
             and self._execution.pending_plan_id is None
         )
+        terminal_is_active = plan_id == self._active_plan_id
         if (
             state == "SUCCEEDED"
             and execution_idle
+            and terminal_is_active
+            and self._active_collision_plan is not None
         ):
-            # A completed goal is a valid terminal hold, not an invitation to
-            # generate another ten-second motion from the goal.  Keep its
-            # collision occupancy guarded and wait for an explicitly new target.
-            self._target = None
-            self._invalidate()
-        elif execution_idle:
+            # Keep the completed target as a protected terminal hold.  Safe
+            # worlds cause no command; an unsafe prediction can use the same
+            # top-K replacement path as a moving trajectory before the guard
+            # falls back to braking.
+            self._goal_reached = True
+            self._last_switch_decision = "goal_reached_terminal_hold"
+            self.get_logger().info(
+                "goal reached; holding position and retaining the target for "
+                "collision-triggered replanning"
+            )
+        elif execution_idle and terminal_is_active:
             self._active_plan = None
             self._active_collision_plan = None
+            self._active_plan_id = None
+            self._goal_reached = False
         if state in ("REJECTED", "ABORTED", "SEND_ERROR", "RESULT_ERROR"):
             self.get_logger().error(f"JTC dynamic plan {plan_id} entered {state}")
         self._record_replay("record_terminal", plan_id)
@@ -1265,6 +1299,8 @@ class MpdDynamicReplanNode(Node):
                 "has_state": self._state is not None,
                 "has_target": self._target is not None,
                 "has_active_plan": self._active_plan is not None,
+                "active_plan_id": self._active_plan_id,
+                "goal_reached": self._goal_reached,
                 "plan_only": self._plan_only,
                 "braking": self._braking,
                 "guard_reason": self._last_guard_reason,
