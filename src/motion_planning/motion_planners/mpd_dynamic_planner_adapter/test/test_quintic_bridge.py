@@ -8,9 +8,17 @@ from manipulation_motion_planning.contracts import (
 )
 from mpd_dynamic_planner_adapter.quintic_bridge import (
     minimum_bridge_duration,
+    predict_point_with_terminal_hold,
     sample_quintic,
+    select_quintic_handoff,
     splice_with_quintic_bridge,
 )
+from mpd_dynamic_planner_adapter.collision_guard import (
+    DynamicTrajectoryGuard,
+    TimedCollisionPlan,
+)
+from mpd_dynamic_planner_adapter.dynamic_world import DynamicWorldSnapshot
+from mpd_planner_adapter.trajectory import TimedPlan
 
 
 def _boundary(distance):
@@ -79,3 +87,51 @@ def test_splice_contains_continuous_quintic_then_complete_mpd_suffix():
     assert handoff.accelerations == pytest.approx(new.points[0].accelerations)
     assert final.positions == new.points[1].positions
     assert final.time_from_start_s == pytest.approx(2.0)
+
+
+def test_handoff_can_start_from_a_safe_terminal_hold_after_plan_end():
+    result = TrajectoryPlanResult(
+        valid=True,
+        joint_names=[f"fr3_joint{i}" for i in range(1, 8)],
+        points=[
+            TrajectoryPlanPoint([0.0] * 7, [0.0] * 7, 0.0, [0.0] * 7),
+            TrajectoryPlanPoint([0.2] * 7, [0.0] * 7, 1.0, [0.0] * 7),
+        ],
+    )
+    active = TimedPlan(result, 0.0)
+    collision = TimedCollisionPlan(
+        absolute_times_s=np.asarray([0.0, 1.0, 2.0]),
+        sphere_positions=np.asarray([[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]]),
+        sphere_radii=np.asarray([0.05]),
+    )
+    world = DynamicWorldSnapshot(
+        version=1,
+        frame_id="fr3_link0",
+        stamp_unix_ns=0,
+        valid_until_unix_ns=5_000_000_000,
+        objects=(),
+    )
+
+    choice = select_quintic_handoff(
+        active_plan=active,
+        collision_plan=collision,
+        world=world,
+        guard=DynamicTrajectoryGuard(),
+        now_unix_s=1.1,
+        bridge_start_unix_s=1.2,
+        latest_handoff_unix_s=2.0,
+        step_s=0.05,
+        minimum_duration_s=0.2,
+        max_velocity_rad_s=1.5,
+        max_acceleration_rad_s2=3.0,
+        max_jerk_rad_s3=15.0,
+        sample_dt_s=0.02,
+        allow_terminal_hold=True,
+    )
+
+    assert choice.handoff_unix_s is not None
+    assert choice.handoff_unix_s > 1.0
+    held = predict_point_with_terminal_hold(active, choice.handoff_unix_s)
+    assert held.positions == result.points[-1].positions
+    assert held.velocities == [0.0] * 7
+    assert held.accelerations == [0.0] * 7

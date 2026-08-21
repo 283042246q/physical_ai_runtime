@@ -36,6 +36,7 @@ from .collision_guard import (
     DynamicTrajectoryGuard,
     TimedCollisionPlan,
     collision_plan_from_result,
+    extend_collision_plan_with_terminal_hold,
     splice_collision_plans,
 )
 from .dynamic_world import DynamicWorldError, DynamicWorldManager, DynamicWorldSnapshot
@@ -47,6 +48,7 @@ from .candidate_selector import (
 )
 from .quintic_bridge import (
     QuinticBridgeError,
+    predict_point_with_terminal_hold,
     select_quintic_handoff,
     splice_with_quintic_bridge,
 )
@@ -124,7 +126,7 @@ def _prepend_execution_prefix(
     else:
         prefix = []
         for stamp in absolute_times:
-            point = active_plan.predict_point(float(stamp))
+            point = predict_point_with_terminal_hold(active_plan, float(stamp))
             prefix.append(
                 TrajectoryPlanPoint(
                     positions=list(point.positions),
@@ -191,6 +193,7 @@ class MpdDynamicReplanNode(Node):
             "comparison_sample_dt_s": 0.02,
             "preferred_clearance_m": 0.10,
             "cost_kinematic_weight": 1.0,
+            "cost_tail_kinematic_weight": 1.0,
             "cost_clearance_weight": 4.0,
             "cost_mpd_weight": 0.10,
             "cost_bridge_weight": 0.10,
@@ -198,6 +201,7 @@ class MpdDynamicReplanNode(Node):
             "switching_hysteresis": 0.02,
             "minimum_commit_interval_s": 1.0,
             "replacement_retry_reserve_s": 3.0,
+            "enable_exhaustion_forced_switch": False,
             "guard_rate_hz": 20.0,
             "guard_lookahead_s": 2.0,
             "guard_check_dt_s": 0.02,
@@ -255,6 +259,7 @@ class MpdDynamicReplanNode(Node):
         self._preferred_clearance_m = float(value("preferred_clearance_m"))
         self._cost_weights = {
             "kinematic": float(value("cost_kinematic_weight")),
+            "tail_kinematic": float(value("cost_tail_kinematic_weight")),
             "clearance": float(value("cost_clearance_weight")),
             "mpd": float(value("cost_mpd_weight")),
             "bridge": float(value("cost_bridge_weight")),
@@ -263,10 +268,14 @@ class MpdDynamicReplanNode(Node):
         self._switching_hysteresis = float(value("switching_hysteresis"))
         self._minimum_commit_interval_s = float(value("minimum_commit_interval_s"))
         self._replacement_retry_reserve_s = float(value("replacement_retry_reserve_s"))
+        self._enable_exhaustion_forced_switch = bool(
+            value("enable_exhaustion_forced_switch")
+        )
         if any(option <= 0.0 for option in self._bridge_options.values()):
             raise ValueError("quintic bridge durations, sampling, and limits must be positive")
         if (
             self._comparison_horizon_s <= 0.0
+            or self._comparison_horizon_s >= self._trajectory_duration_s
             or self._comparison_sample_dt_s <= 0.0
             or self._minimum_commit_interval_s < 0.0
             or self._replacement_retry_reserve_s < 0.0
@@ -538,17 +547,22 @@ class MpdDynamicReplanNode(Node):
         handoff = None
         bridge_duration = None
         if self._active_plan is not None and self._active_collision_plan is not None:
+            latest_handoff = min(
+                now + self._handoff_search_horizon_s, latest_for_new_horizon
+            )
+            handoff_collision_plan = extend_collision_plan_with_terminal_hold(
+                self._active_collision_plan, latest_handoff
+            )
             choice = select_quintic_handoff(
                 active_plan=self._active_plan,
-                collision_plan=self._active_collision_plan,
+                collision_plan=handoff_collision_plan,
                 world=world,
                 guard=self._guard,
                 now_unix_s=now,
                 bridge_start_unix_s=bridge_start,
-                latest_handoff_unix_s=min(
-                    now + self._handoff_search_horizon_s, latest_for_new_horizon
-                ),
+                latest_handoff_unix_s=latest_handoff,
                 step_s=self._handoff_step_s,
+                allow_terminal_hold=True,
                 **self._bridge_options,
             )
             handoff = choice.handoff_unix_s
@@ -566,7 +580,9 @@ class MpdDynamicReplanNode(Node):
             return
         try:
             if self._active_plan is not None:
-                handoff_point = self._active_plan.predict_point(handoff)
+                handoff_point = predict_point_with_terminal_hold(
+                    self._active_plan, handoff
+                )
                 start = StartState(
                     list(self._active_plan.result.joint_names or []),
                     list(handoff_point.positions),
@@ -694,7 +710,9 @@ class MpdDynamicReplanNode(Node):
                 )
                 bridge_initial_acceleration = np.zeros(7)
             else:
-                expected_now = self._active_plan.predict(now)
+                expected_now = predict_point_with_terminal_hold(
+                    self._active_plan, now
+                )
                 drift = float(
                     np.max(
                         np.abs(
@@ -710,7 +728,9 @@ class MpdDynamicReplanNode(Node):
                     raise QuinticBridgeError(
                         f"active-plan drift {drift:.6f} rad exceeds configured limit"
                     )
-                initial_point = self._active_plan.predict_point(bridge_start)
+                initial_point = predict_point_with_terminal_hold(
+                    self._active_plan, bridge_start
+                )
                 bridge_initial = StartState(
                     list(self._active_plan.result.joint_names or []),
                     list(initial_point.positions),
@@ -783,8 +803,10 @@ class MpdDynamicReplanNode(Node):
                                     np.abs(
                                         np.asarray(point.positions)
                                         - np.asarray(
-                                            self._active_plan.predict(
-                                                bridge_start + point.time_from_start_s
+                                            predict_point_with_terminal_hold(
+                                                self._active_plan,
+                                                bridge_start
+                                                + point.time_from_start_s,
                                             ).positions
                                         )
                                     )
@@ -799,15 +821,22 @@ class MpdDynamicReplanNode(Node):
                     else:
                         bridge_deviation = 0.0
                     new_collision = collision_plan_from_result(candidate, handoff)
+                    active_collision = (
+                        None
+                        if self._active_collision_plan is None
+                        else extend_collision_plan_with_terminal_hold(
+                            self._active_collision_plan, handoff
+                        )
+                    )
                     merged_collision = splice_collision_plans(
-                        self._active_collision_plan,
+                        active_collision,
                         new_collision,
                         bridge_start,
                         handoff,
                         self._splice_options["prefix_dt_s"],
                     )
                     monitoring_collision = splice_collision_plans(
-                        self._active_collision_plan,
+                        active_collision,
                         merged_collision,
                         now,
                         bridge_start,
@@ -821,11 +850,15 @@ class MpdDynamicReplanNode(Node):
                     )
                     if not risk.safe:
                         continue
-                    window_end = bridge_start + self._comparison_horizon_s
+                    # Compare both alternatives from the identical handoff state.
+                    # The bridge is scored separately, while this first window and
+                    # the following tail cover the complete future command horizon.
+                    window_end = handoff + self._comparison_horizon_s
+                    comparison_end = handoff + self._trajectory_duration_s
                     kinematic = common_window_kinematic_cost(
                         merged,
                         trajectory_start_unix_s=bridge_start,
-                        window_start_unix_s=bridge_start,
+                        window_start_unix_s=handoff,
                         window_end_unix_s=window_end,
                         max_velocity_rad_s=self._bridge_options["max_velocity_rad_s"],
                         max_acceleration_rad_s2=self._bridge_options[
@@ -833,9 +866,35 @@ class MpdDynamicReplanNode(Node):
                         ],
                         max_jerk_rad_s3=self._bridge_options["max_jerk_rad_s3"],
                         sample_dt_s=self._comparison_sample_dt_s,
+                        hold_after_end=True,
                     )
+                    tail_kinematic = common_window_kinematic_cost(
+                        merged,
+                        trajectory_start_unix_s=bridge_start,
+                        window_start_unix_s=window_end,
+                        window_end_unix_s=comparison_end,
+                        max_velocity_rad_s=self._bridge_options["max_velocity_rad_s"],
+                        max_acceleration_rad_s2=self._bridge_options[
+                            "max_acceleration_rad_s2"
+                        ],
+                        max_jerk_rad_s3=self._bridge_options["max_jerk_rad_s3"],
+                        sample_dt_s=self._comparison_sample_dt_s,
+                        hold_after_end=True,
+                    )
+                    comparison_collision = extend_collision_plan_with_terminal_hold(
+                        new_collision, comparison_end
+                    )
+                    comparison_risk = self._guard.validate(
+                        comparison_collision,
+                        evaluation_world,
+                        handoff,
+                        comparison_end,
+                    )
+                    if not comparison_risk.safe:
+                        continue
                     clearance = clearance_cost(
-                        risk.minimum_clearance_m, self._preferred_clearance_m
+                        comparison_risk.minimum_clearance_m,
+                        self._preferred_clearance_m,
                     )
                     bridge_stats = merged.diagnostics["bridge"]
                     bridge_cost = (
@@ -847,6 +906,7 @@ class MpdDynamicReplanNode(Node):
                     ) / 4.0
                     total = (
                         self._cost_weights["kinematic"] * kinematic
+                        + self._cost_weights["tail_kinematic"] * tail_kinematic
                         + self._cost_weights["clearance"] * clearance
                         + self._cost_weights["mpd"] * float(normalized_scores[index])
                         + self._cost_weights["bridge"] * bridge_cost
@@ -860,6 +920,7 @@ class MpdDynamicReplanNode(Node):
                             clearance,
                             float(normalized_scores[index]),
                             bridge_cost,
+                            tail_kinematic,
                         )
                     )
                     merged.diagnostics.update(
@@ -867,6 +928,7 @@ class MpdDynamicReplanNode(Node):
                         composite_cost={
                             "total": total,
                             "kinematic": kinematic,
+                            "tail_kinematic": tail_kinematic,
                             "clearance": clearance,
                             "mpd": float(normalized_scores[index]),
                             "bridge": bridge_cost,
@@ -879,18 +941,22 @@ class MpdDynamicReplanNode(Node):
             old_cost = math.inf
             old_safe = False
             if self._active_plan is not None and self._active_collision_plan is not None:
-                window_end = bridge_start + self._comparison_horizon_s
+                window_end = handoff + self._comparison_horizon_s
+                comparison_end = handoff + self._trajectory_duration_s
                 try:
+                    old_comparison_collision = extend_collision_plan_with_terminal_hold(
+                        self._active_collision_plan, comparison_end
+                    )
                     old_risk = self._guard.validate(
-                        self._active_collision_plan,
+                        old_comparison_collision,
                         evaluation_world,
-                        bridge_start,
-                        window_end,
+                        handoff,
+                        comparison_end,
                     )
                     old_kinematic = common_window_kinematic_cost(
                         self._active_plan.result,
                         trajectory_start_unix_s=self._active_plan.start_unix_s,
-                        window_start_unix_s=bridge_start,
+                        window_start_unix_s=handoff,
                         window_end_unix_s=window_end,
                         max_velocity_rad_s=self._bridge_options["max_velocity_rad_s"],
                         max_acceleration_rad_s2=self._bridge_options[
@@ -898,11 +964,31 @@ class MpdDynamicReplanNode(Node):
                         ],
                         max_jerk_rad_s3=self._bridge_options["max_jerk_rad_s3"],
                         sample_dt_s=self._comparison_sample_dt_s,
+                        hold_after_end=True,
                     )
-                    old_safe = old_risk.safe and math.isfinite(old_kinematic)
+                    old_tail_kinematic = common_window_kinematic_cost(
+                        self._active_plan.result,
+                        trajectory_start_unix_s=self._active_plan.start_unix_s,
+                        window_start_unix_s=window_end,
+                        window_end_unix_s=comparison_end,
+                        max_velocity_rad_s=self._bridge_options["max_velocity_rad_s"],
+                        max_acceleration_rad_s2=self._bridge_options[
+                            "max_acceleration_rad_s2"
+                        ],
+                        max_jerk_rad_s3=self._bridge_options["max_jerk_rad_s3"],
+                        sample_dt_s=self._comparison_sample_dt_s,
+                        hold_after_end=True,
+                    )
+                    old_safe = (
+                        old_risk.safe
+                        and math.isfinite(old_kinematic)
+                        and math.isfinite(old_tail_kinematic)
+                    )
                     if old_safe:
                         old_cost = (
                             self._cost_weights["kinematic"] * old_kinematic
+                            + self._cost_weights["tail_kinematic"]
+                            * old_tail_kinematic
                             + self._cost_weights["clearance"]
                             * clearance_cost(
                                 old_risk.minimum_clearance_m,
@@ -912,7 +998,11 @@ class MpdDynamicReplanNode(Node):
                 except ValueError:
                     old_safe = False
             forced_switch_reason = None
-            if self._active_plan is not None and old_safe:
+            if (
+                self._enable_exhaustion_forced_switch
+                and self._active_plan is not None
+                and old_safe
+            ):
                 old_remaining_s = (
                     self._active_plan.start_unix_s
                     + self._active_plan.result.points[-1].time_from_start_s
@@ -1031,9 +1121,12 @@ class MpdDynamicReplanNode(Node):
         if world is None:
             return
         now = time.time()
-        end = min(now + self._guard_lookahead_s, self._active_collision_plan.absolute_times_s[-1])
+        end = min(now + self._guard_lookahead_s, world.valid_until_unix_ns * 1e-9)
         try:
-            risk = self._guard.validate(self._active_collision_plan, world, now, end)
+            guarded_plan = extend_collision_plan_with_terminal_hold(
+                self._active_collision_plan, end
+            )
+            risk = self._guard.validate(guarded_plan, world, now, end)
         except ValueError:
             return
         self._last_guard_clearance_m = risk.minimum_clearance_m
@@ -1085,7 +1178,21 @@ class MpdDynamicReplanNode(Node):
     def _on_goal_terminal(self, plan_id: int, state: str) -> None:
         self._candidate_plans.pop(plan_id, None)
         self._counters["goal_terminal"] += 1
-        if self._execution is not None and self._execution.plan_id is None:
+        execution_idle = (
+            self._execution is not None
+            and self._execution.plan_id is None
+            and self._execution.pending_plan_id is None
+        )
+        if (
+            state == "SUCCEEDED"
+            and execution_idle
+        ):
+            # A completed goal is a valid terminal hold, not an invitation to
+            # generate another ten-second motion from the goal.  Keep its
+            # collision occupancy guarded and wait for an explicitly new target.
+            self._target = None
+            self._invalidate()
+        elif execution_idle:
             self._active_plan = None
             self._active_collision_plan = None
         if state in ("REJECTED", "ABORTED", "SEND_ERROR", "RESULT_ERROR"):

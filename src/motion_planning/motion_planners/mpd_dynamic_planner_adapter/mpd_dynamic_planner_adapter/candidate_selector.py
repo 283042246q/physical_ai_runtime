@@ -18,6 +18,7 @@ class CandidateCost:
     clearance: float
     mpd: float
     bridge: float
+    tail_kinematic: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -70,13 +71,16 @@ def common_window_kinematic_cost(
     max_acceleration_rad_s2: float,
     max_jerk_rad_s3: float,
     sample_dt_s: float = 0.02,
+    hold_after_end: bool = False,
 ) -> float:
     if not window_end_unix_s > window_start_unix_s or sample_dt_s <= 0.0:
         raise ValueError("comparison window is invalid")
     times, positions, velocities, accelerations = _arrays(result)
     relative_start = window_start_unix_s - trajectory_start_unix_s
     relative_end = window_end_unix_s - trajectory_start_unix_s
-    if relative_start < times[0] - 1e-9 or relative_end > times[-1] + 1e-9:
+    if relative_start < times[0] - 1e-9 or (
+        relative_end > times[-1] + 1e-9 and not hold_after_end
+    ):
         return math.inf
     count = max(2, int(math.ceil((relative_end - relative_start) / sample_dt_s)) + 1)
     sample_times = np.linspace(relative_start, relative_end, count)
@@ -89,6 +93,11 @@ def common_window_kinematic_cost(
     ddq = np.column_stack(
         [np.interp(sample_times, times, accelerations[:, joint]) for joint in range(positions.shape[1])]
     )
+    if hold_after_end:
+        held = sample_times > times[-1] + 1e-9
+        q[held] = positions[-1]
+        dq[held] = 0.0
+        ddq[held] = 0.0
     jerk = np.gradient(ddq, sample_times, axis=0, edge_order=1)
     duration = relative_end - relative_start
     path = float(np.sum(np.linalg.norm(np.diff(q, axis=0), axis=1)))

@@ -39,13 +39,17 @@ mpd_dynamic_replanner:
     comparison_sample_dt_s: 0.02
     preferred_clearance_m: 0.10
     cost_kinematic_weight: 1.0
+    # Full suffix after comparison_horizon_s: path length, dq, ddq and jerk.
+    cost_tail_kinematic_weight: 1.0
     cost_clearance_weight: 4.0
     cost_mpd_weight: 0.10
     cost_bridge_weight: 0.10
     cost_switch_penalty: 0.02
     switching_hysteresis: 0.02
     minimum_commit_interval_s: 1.0
-    # Keep enough command horizon for one failed plan and a subsequent retry.
+    # Optional legacy exhaustion override. Disabled so a safe, lower-cost old
+    # trajectory (including terminal hold) always remains subject to hysteresis.
+    enable_exhaustion_forced_switch: false
     replacement_retry_reserve_s: 3.0
     guard_rate_hz: 20.0
     guard_lookahead_s: 2.0

@@ -150,6 +150,26 @@ class DynamicTrajectoryGuard:
         )
 
 
+def extend_collision_plan_with_terminal_hold(
+    plan: TimedCollisionPlan,
+    end_unix_s: float,
+) -> TimedCollisionPlan:
+    """Extend a collision-sphere trajectory by holding its terminal pose."""
+
+    end = float(end_unix_s)
+    if not math.isfinite(end):
+        raise ValueError("terminal-hold end time must be finite")
+    if end <= float(plan.absolute_times_s[-1]) + 1e-9:
+        return plan
+    return TimedCollisionPlan(
+        absolute_times_s=np.concatenate((plan.absolute_times_s, [end])),
+        sphere_positions=np.concatenate(
+            (plan.sphere_positions, plan.sphere_positions[-1:]), axis=0
+        ),
+        sphere_radii=plan.sphere_radii,
+    )
+
+
 def collision_plan_from_result(result, trajectory_start_unix_s: float) -> TimedCollisionPlan:
     diagnostics = result.diagnostics
     times = np.asarray([point.time_from_start_s for point in result.points], dtype=np.float64)

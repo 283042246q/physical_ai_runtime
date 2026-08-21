@@ -42,6 +42,28 @@ class QuinticHandoffChoice:
     candidates_checked: int
 
 
+def predict_point_with_terminal_hold(
+    active_plan: TimedPlan,
+    unix_s: float,
+) -> TrajectoryPlanPoint:
+    """Predict the active state, with zero derivatives after its final point."""
+
+    point = active_plan.predict_point(unix_s)
+    active_end = (
+        active_plan.start_unix_s
+        + active_plan.result.points[-1].time_from_start_s
+    )
+    if unix_s <= active_end + 1e-9:
+        return point
+    final = active_plan.result.points[-1]
+    return TrajectoryPlanPoint(
+        positions=list(final.positions),
+        velocities=[0.0] * len(final.positions),
+        accelerations=[0.0] * len(final.positions),
+        time_from_start_s=unix_s - active_plan.start_unix_s,
+    )
+
+
 def _vector(values, size: int, name: str) -> np.ndarray:
     output = np.asarray(values, dtype=np.float64)
     if output.shape == ():
@@ -233,22 +255,30 @@ def select_quintic_handoff(
     max_acceleration_rad_s2,
     max_jerk_rad_s3,
     sample_dt_s: float,
+    allow_terminal_hold: bool = False,
 ) -> QuinticHandoffChoice:
     if step_s <= 0.0:
         raise QuinticBridgeError("handoff step must be positive")
     active_end = active_plan.start_unix_s + active_plan.result.points[-1].time_from_start_s
-    latest = min(
+    latest_limits = [
         float(latest_handoff_unix_s),
-        float(active_end),
         float(collision_plan.absolute_times_s[-1]),
         world.valid_until_unix_ns * 1e-9,
-    )
-    initial = active_plan.predict_point(bridge_start_unix_s)
+    ]
+    if not allow_terminal_hold:
+        latest_limits.append(float(active_end))
+    latest = min(latest_limits)
+    def predict(stamp: float) -> TrajectoryPlanPoint:
+        if allow_terminal_hold:
+            return predict_point_with_terminal_hold(active_plan, stamp)
+        return active_plan.predict_point(stamp)
+
+    initial = predict(bridge_start_unix_s)
     candidate = bridge_start_unix_s + minimum_duration_s
     checked = 0
     while candidate <= latest + 1e-9:
         checked += 1
-        target = active_plan.predict_point(candidate)
+        target = predict(candidate)
         available = candidate - bridge_start_unix_s
         try:
             required, _ = minimum_bridge_duration(
