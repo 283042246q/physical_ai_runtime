@@ -39,14 +39,17 @@ class DynamicWorldDemoNode(Node):
             base_inflation_m = 0.01
             horizon_inflation_rate_m_s = 0.005
         elif self._scenario == "to_drawer_crossing":
-            position = [0.12 - 0.045 * elapsed, 0.40, 0.38]
+            position = [0.4 - 0.045 * elapsed, 0.40, 0.38]
             local_sdf = {"type": "box", "size_xyz": [0.16, 0.12, 0.18]}
             base_inflation_m = 0.03
             horizon_inflation_rate_m_s = 0.02
         elif self._scenario == "to_drawer_bridge_crossing":
             # A repeatable crossing that remains solvable long enough to
             # exercise multiple moving-state trajectory replacements.
-            position = [0.32 - 0.09 * elapsed, 0.40, 0.38]
+            if elapsed < 15.0:
+                position = [0.32 - 0.09 * elapsed, 0.40, 0.38]
+            else:
+                position = [-1.03 + 0.09 *  (elapsed - 15.0), 0.40, 0.38]
             local_sdf = {"type": "box", "size_xyz": [0.14, 0.10, 0.16]}
             base_inflation_m = 0.02
             horizon_inflation_rate_m_s = 0.01
