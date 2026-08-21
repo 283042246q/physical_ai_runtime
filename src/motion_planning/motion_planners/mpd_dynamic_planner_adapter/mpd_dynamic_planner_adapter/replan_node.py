@@ -190,6 +190,7 @@ class MpdDynamicReplanNode(Node):
             "bridge_max_jerk_rad_s3": 15.0,
             "bridge_max_active_deviation_rad": 0.08,
             "comparison_horizon_s": 2.0,
+            "near_goal_replan_suppression_s": 2.0,
             "comparison_sample_dt_s": 0.02,
             "preferred_clearance_m": 0.10,
             "cost_kinematic_weight": 1.0,
@@ -255,6 +256,9 @@ class MpdDynamicReplanNode(Node):
             value("bridge_max_active_deviation_rad")
         )
         self._comparison_horizon_s = float(value("comparison_horizon_s"))
+        self._near_goal_replan_suppression_s = float(
+            value("near_goal_replan_suppression_s")
+        )
         self._comparison_sample_dt_s = float(value("comparison_sample_dt_s"))
         self._preferred_clearance_m = float(value("preferred_clearance_m"))
         self._cost_weights = {
@@ -276,6 +280,7 @@ class MpdDynamicReplanNode(Node):
         if (
             self._comparison_horizon_s <= 0.0
             or self._comparison_horizon_s >= self._trajectory_duration_s
+            or self._near_goal_replan_suppression_s < 0.0
             or self._comparison_sample_dt_s <= 0.0
             or self._minimum_commit_interval_s < 0.0
             or self._replacement_retry_reserve_s < 0.0
@@ -355,6 +360,7 @@ class MpdDynamicReplanNode(Node):
                 "no_bridge_retry",
                 "hysteresis_kept_old",
                 "minimum_interval_kept_old",
+                "near_goal_kept_old",
                 "goal_submitted",
                 "goal_accepted",
                 "goal_terminal",
@@ -539,6 +545,36 @@ class MpdDynamicReplanNode(Node):
             self._controlled_brake("stale_dynamic_world", clear_target=True)
             return
         now = time.time()
+        if (
+            self._near_goal_replan_suppression_s > 0.0
+            and self._active_plan is not None
+            and self._active_collision_plan is not None
+        ):
+            active_end = (
+                self._active_plan.start_unix_s
+                + self._active_plan.result.points[-1].time_from_start_s
+            )
+            # Do not start work whose planning deadline already falls inside
+            # the near-goal band; otherwise a request started just outside the
+            # band can still complete and perturb selection during settling.
+            remaining_at_deadline = active_end - (now + self._planning_budget_s)
+            if remaining_at_deadline <= self._near_goal_replan_suppression_s:
+                validation_end = now + self._trajectory_duration_s
+                terminal_risk = None
+                if validation_end <= world.valid_until_unix_ns * 1e-9 + 1e-9:
+                    try:
+                        held_collision = extend_collision_plan_with_terminal_hold(
+                            self._active_collision_plan, validation_end
+                        )
+                        terminal_risk = self._guard.validate(
+                            held_collision, world, now, validation_end
+                        )
+                    except ValueError:
+                        pass
+                if terminal_risk is not None and terminal_risk.safe:
+                    self._last_switch_decision = "safe_near_goal_terminal_hold"
+                    self._counters["near_goal_kept_old"] += 1
+                    return
         planning_deadline = now + self._planning_budget_s
         bridge_start = planning_deadline + max(
             self._command_lead_s, self._commit_margin_s
