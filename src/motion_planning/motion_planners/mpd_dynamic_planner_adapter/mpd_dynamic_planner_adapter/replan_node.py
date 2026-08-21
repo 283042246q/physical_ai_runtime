@@ -204,7 +204,7 @@ class MpdDynamicReplanNode(Node):
             "replacement_retry_reserve_s": 3.0,
             "enable_exhaustion_forced_switch": False,
             "guard_rate_hz": 20.0,
-            "guard_lookahead_s": 2.0,
+            "guard_lookahead_s": 3.0,
             "guard_check_dt_s": 0.02,
             "guard_minimum_clearance_m": 0.0,
             "covariance_sigma": 3.0,
