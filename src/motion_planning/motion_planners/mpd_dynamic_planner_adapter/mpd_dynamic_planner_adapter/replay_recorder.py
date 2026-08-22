@@ -17,6 +17,19 @@ from manipulation_motion_planning.contracts import StartState, TrajectoryPlanRes
 from .dynamic_world import DynamicWorldSnapshot
 
 
+def _best_positions_from_archive(data) -> np.ndarray:
+    if "positions" in data:
+        return np.asarray(data["positions"], dtype=np.float64)
+    schema_version = int(np.asarray(data["artifact_schema_version"]).item())
+    if schema_version != 2:
+        raise ValueError("omitted positions require trajectory schema v2")
+    best_index = int(np.asarray(data["best_trajectory_topk_index"]).item())
+    topk_positions = np.asarray(data["topk_positions"], dtype=np.float64)
+    if best_index < 0 or best_index >= len(topk_positions):
+        raise ValueError("best trajectory top-K index is out of range")
+    return topk_positions[best_index]
+
+
 @dataclass
 class _RecordedPlan:
     plan_id: str
@@ -317,7 +330,7 @@ class DynamicReplayRecorder:
         if initial_q is None:
             first_path = self.output_dir / next(iter(self._plans.values())).trajectory
             with np.load(first_path, allow_pickle=False) as data:
-                initial_q = np.asarray(data["positions"])[0].tolist()
+                initial_q = _best_positions_from_archive(data)[0].tolist()
         plans = []
         for plan in self._plans.values():
             payload = {

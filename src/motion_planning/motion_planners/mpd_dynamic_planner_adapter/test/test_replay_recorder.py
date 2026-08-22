@@ -1,12 +1,17 @@
 import json
 
+import numpy as np
+
 from manipulation_motion_planning.contracts import (
     StartState,
     TrajectoryPlanPoint,
     TrajectoryPlanResult,
 )
 from mpd_dynamic_planner_adapter.dynamic_world import DynamicWorldSnapshot
-from mpd_dynamic_planner_adapter.replay_recorder import DynamicReplayRecorder
+from mpd_dynamic_planner_adapter.replay_recorder import (
+    DynamicReplayRecorder,
+    _best_positions_from_archive,
+)
 
 
 def _result(offset=0.0):
@@ -111,3 +116,21 @@ def test_recorder_flush_checkpoints_before_shutdown(tmp_path):
     assert manifest["duration_s"] == 0.5
     assert manifest["plans"][0]["status"] == "accepted"
     assert manifest["plans"][0]["active_until_s"] == 0.5
+
+
+def test_recorder_reads_schema_v2_best_positions(tmp_path):
+    path = tmp_path / "trajectory.npz"
+    np.savez(
+        path,
+        artifact_schema_version=np.asarray(2, dtype=np.int64),
+        best_trajectory_topk_index=np.asarray(1, dtype=np.int64),
+        topk_positions=np.asarray(
+            [
+                [[0.0] * 7, [0.1] * 7],
+                [[1.0] * 7, [1.1] * 7],
+            ]
+        ),
+    )
+    with np.load(path, allow_pickle=False) as data:
+        positions = _best_positions_from_archive(data)
+    assert positions[0].tolist() == [1.0] * 7
