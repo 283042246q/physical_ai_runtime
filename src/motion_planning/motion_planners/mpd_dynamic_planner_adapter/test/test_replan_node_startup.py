@@ -13,7 +13,7 @@ def test_dynamic_replanner_starts_without_target_or_world():
         assert node._world_manager.snapshot is None
         assert node._plan_only
         assert not node._goal_reached
-        assert node._guard_lookahead_s == 3.0
+        assert node._guard_lookahead_s == 2.0
         assert node._backend.client.socket_path.name == "mpd-dynamic-runtime.sock"
     finally:
         node.destroy_node()
