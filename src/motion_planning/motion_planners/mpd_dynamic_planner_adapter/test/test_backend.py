@@ -107,3 +107,42 @@ def test_dynamic_backend_rejects_unuploaded_world_version():
     )
     assert not result.valid
     assert "not uploaded" in result.reason
+
+
+def test_dynamic_backend_reads_deduplicated_schema_v2_float32_spheres(tmp_path):
+    path = tmp_path / "trajectory-v2.npz"
+    np.savez(
+        path,
+        artifact_schema_version=np.asarray(2, dtype=np.int64),
+        best_trajectory_topk_index=np.asarray(0, dtype=np.int64),
+        time_from_start=np.asarray([0.0, 10.0]),
+        joint_names=np.asarray(NAMES),
+        collision_sphere_radii=np.full(56, 0.01, dtype=np.float32),
+        topk_positions=np.zeros((2, 2, 7)),
+        topk_velocities=np.zeros((2, 2, 7)),
+        topk_accelerations=np.zeros((2, 2, 7)),
+        topk_scores=np.asarray([0.1, 0.2]),
+        topk_source_candidate_indices=np.asarray([3, 7]),
+        topk_collision_sphere_positions=np.zeros((2, 2, 56, 3), dtype=np.float32),
+    )
+    backend = DynamicMpdGlobalTrajectoryBackend("/tmp/not-used.sock")
+    backend.client = FakeClient(path)
+    backend.warmup()
+    snapshot = DynamicWorldSnapshot(
+        4, "fr3_link0", 1_000_000_000, 20_000_000_000, ()
+    )
+    backend.update_world_snapshot(snapshot)
+    result = backend.plan(
+        StartState(NAMES, [0.0] * 7, [0.0] * 7, 1.0),
+        JointTarget(NAMES, [0.1] * 7),
+        {
+            "request_seq": 5,
+            "world_version": 4,
+            "handoff_unix_ns": 2_000_000_000,
+            "deadline_unix_ns": time.time_ns() + 1_000_000_000,
+        },
+    )
+    assert result.valid
+    assert result.diagnostics["trajectory_artifact_schema_version"] == 2
+    assert result.diagnostics["collision_sphere_positions"].shape == (2, 56, 3)
+    assert result.points[0].positions == [0.0] * 7

@@ -125,14 +125,18 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                 return TrajectoryPlanResult(valid=False, reason="deadline_expired_at_client")
             path = Path(str(response["trajectory_path"]))
             with np.load(path, allow_pickle=False) as data:
-                positions = np.asarray(data["positions"], dtype=np.float64)
-                velocities = np.asarray(data["velocities"], dtype=np.float64)
-                accelerations = np.asarray(data["accelerations"], dtype=np.float64)
+                artifact_response = response.get("trajectory_artifact", {})
+                schema_version = int(
+                    np.asarray(data["artifact_schema_version"]).item()
+                    if "artifact_schema_version" in data
+                    else artifact_response.get("schema_version", 1)
+                )
+                if schema_version not in (1, 2):
+                    raise MpdClientError(
+                        f"unsupported dynamic trajectory schema v{schema_version}"
+                    )
                 stamps = np.asarray(data["time_from_start"], dtype=np.float64)
                 names = tuple(str(item) for item in data["joint_names"].tolist())
-                sphere_positions = np.asarray(
-                    data["collision_sphere_positions"], dtype=np.float64
-                )
                 sphere_radii = np.asarray(data["collision_sphere_radii"], dtype=np.float64)
                 topk_positions = np.asarray(data["topk_positions"], dtype=np.float64)
                 topk_velocities = np.asarray(data["topk_velocities"], dtype=np.float64)
@@ -143,6 +147,33 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                 )
                 topk_sphere_positions = np.asarray(
                     data["topk_collision_sphere_positions"], dtype=np.float64
+                )
+                best_index = int(
+                    np.asarray(data["best_trajectory_topk_index"]).item()
+                    if "best_trajectory_topk_index" in data
+                    else artifact_response.get("best_trajectory_topk_index", 0)
+                )
+                if best_index < 0 or best_index >= topk_positions.shape[0]:
+                    raise MpdClientError("best trajectory top-K index is out of range")
+                positions = np.asarray(
+                    data["positions"] if "positions" in data else topk_positions[best_index],
+                    dtype=np.float64,
+                )
+                velocities = np.asarray(
+                    data["velocities"] if "velocities" in data else topk_velocities[best_index],
+                    dtype=np.float64,
+                )
+                accelerations = np.asarray(
+                    data["accelerations"]
+                    if "accelerations" in data
+                    else topk_accelerations[best_index],
+                    dtype=np.float64,
+                )
+                sphere_positions = np.asarray(
+                    data["collision_sphere_positions"]
+                    if "collision_sphere_positions" in data
+                    else topk_sphere_positions[best_index],
+                    dtype=np.float64,
                 )
             if names != EXPECTED_JOINT_NAMES or positions.ndim != 2 or positions.shape[1] != 7:
                 raise MpdClientError("dynamic trajectory joint contract mismatch")
@@ -230,7 +261,7 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                         },
                     )
                 )
-            primary = candidates[0]
+            primary = candidates[best_index]
             primary.diagnostics.update(
                 {
                     "request_seq": request_seq,
@@ -244,6 +275,8 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                     "top_k_candidates": candidates,
                     "top_k_count": len(candidates),
                     "start_boundary_errors": boundary_errors,
+                    "trajectory_artifact_schema_version": schema_version,
+                    "best_trajectory_topk_index": best_index,
                 },
             )
             return primary
