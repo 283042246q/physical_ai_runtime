@@ -79,6 +79,41 @@ This is a soft-real-time geometric safety layer, not a certified protective
 stop. Real-hardware use still requires the robot's independent protective stop,
 site-specific braking calibration, and conservative speed/acceleration limits.
 
+## Phase 5 candidate-specific timing entry
+
+Phase 4 remains available through the commands above. Phase 5 uses a separate
+worker socket, ROS executable, config, and launch file. Start the inference-only
+space-time worker from the MPD repository:
+
+```bash
+conda run --no-capture-output -n mpd-splines-public \
+  python scripts/runtime/infer_space_time_server.py \
+  --socket /tmp/mpd-space-time-runtime.sock \
+  --output-root /tmp/mpd-space-time-results \
+  --device cuda:0 \
+  --timing-mode phase5_joint
+```
+
+Then run the ROS fake-hardware closed loop:
+
+```bash
+pixi run bash -lc '
+source install/setup.bash
+ros2 launch mpd_dynamic_planner_adapter \
+  replan_space_time_fake_hardware.launch.py \
+  plan_only:=false \
+  world_scenario:=safe_far \
+  timing_mode:=phase5_joint
+'
+```
+
+The Phase-5 backend requires trajectory artifact schema v3 and timing schema
+v1. Every top-K candidate carries its own strictly increasing time array; the
+quintic bridge, common-window comparison, collision guard, and latest-world
+revalidation consume those candidate timestamps directly. The launch also
+accepts `phase5_scalar_duration` and `phase5_timing_only` when the worker is
+started in the matching mode.
+
 ## Passive replay recording
 
 `replan_dynamic.launch.py` and `replan_dynamic_fake_hardware.launch.py` retain their old

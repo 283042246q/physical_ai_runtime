@@ -1,4 +1,4 @@
-"""ROS-side client/backend for the separate Phase-4 MPD worker."""
+"""ROS-side client/backend for the separate Phase-4 and Phase-5 MPD workers."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                     if "artifact_schema_version" in data
                     else artifact_response.get("schema_version", 1)
                 )
-                if schema_version not in (1, 2):
+                if schema_version not in (1, 2, 3):
                     raise MpdClientError(
                         f"unsupported dynamic trajectory schema v{schema_version}"
                     )
@@ -155,6 +155,22 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                 )
                 if best_index < 0 or best_index >= topk_positions.shape[0]:
                     raise MpdClientError("best trajectory top-K index is out of range")
+                timing_schema_version = 0
+                if schema_version == 3:
+                    timing_schema_version = int(
+                        np.asarray(data["timing_schema_version"]).item()
+                    )
+                    if timing_schema_version != 1:
+                        raise MpdClientError(
+                            f"unsupported timing schema v{timing_schema_version}"
+                        )
+                    topk_stamps = np.asarray(
+                        data["topk_time_from_start"], dtype=np.float64
+                    )
+                else:
+                    topk_stamps = np.broadcast_to(
+                        stamps, (topk_positions.shape[0], stamps.shape[0])
+                    ).copy()
                 positions = np.asarray(
                     data["positions"] if "positions" in data else topk_positions[best_index],
                     dtype=np.float64,
@@ -191,6 +207,7 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
             if (
                 len(topk_shape) != 3
                 or topk_shape[1:] != positions.shape
+                or topk_stamps.shape != topk_shape[:2]
                 or topk_velocities.shape != topk_shape
                 or topk_accelerations.shape != topk_shape
                 or topk_scores.shape != (topk_shape[0],)
@@ -209,6 +226,7 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                 topk_positions,
                 topk_velocities,
                 topk_accelerations,
+                topk_stamps,
                 topk_scores,
                 topk_sphere_positions,
             )
@@ -216,6 +234,19 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                 raise MpdClientError("dynamic trajectory contains NaN or Inf")
             if len(stamps) < 2 or stamps[0] < 0.0 or np.any(np.diff(stamps) <= 0.0):
                 raise MpdClientError("dynamic trajectory time is not strictly increasing")
+            if (
+                np.any(topk_stamps[:, 0] < 0.0)
+                or np.any(np.diff(topk_stamps, axis=1) <= 0.0)
+            ):
+                raise MpdClientError(
+                    "dynamic top-K trajectory time is not strictly increasing"
+                )
+            if schema_version == 3 and not np.allclose(
+                stamps, topk_stamps[best_index], rtol=0.0, atol=1e-9
+            ):
+                raise MpdClientError(
+                    "selected trajectory time does not match its top-K timing"
+                )
             q_start = np.asarray(self._request(start_state, target, options)["q_pos_start"])
             dq_start = np.asarray(self._request(start_state, target, options)["q_vel_start"])
             ddq_start = np.asarray(options.get("q_acc_start", np.zeros(7)), dtype=np.float64)
@@ -226,7 +257,11 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                     np.max(np.abs(topk_accelerations[:, 0] - ddq_start)),
                 ]
             )
-            if np.any(boundary_errors > 1e-5):
+            # Phase-5 derivatives are evaluated by the CUDA float32 timing
+            # chain rule before export; allow its one-ULP-scale endpoint
+            # acceleration residue without weakening the Phase-4 contract.
+            boundary_tolerance = 2e-5 if schema_version == 3 else 1e-5
+            if np.any(boundary_errors > boundary_tolerance):
                 raise MpdClientError(
                     "dynamic top-K q/dq/ddq start boundary mismatch: "
                     f"{boundary_errors.tolist()}"
@@ -234,14 +269,15 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
 
             candidates = []
             for candidate_index in range(topk_shape[0]):
+                candidate_stamps = topk_stamps[candidate_index]
                 points = [
                     TrajectoryPlanPoint(
                         positions=topk_positions[candidate_index, index].tolist(),
                         velocities=topk_velocities[candidate_index, index].tolist(),
                         accelerations=topk_accelerations[candidate_index, index].tolist(),
-                        time_from_start_s=float(stamps[index]),
+                        time_from_start_s=float(candidate_stamps[index]),
                     )
-                    for index in range(len(stamps))
+                    for index in range(len(candidate_stamps))
                 ]
                 candidates.append(
                     TrajectoryPlanResult(
@@ -258,6 +294,8 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                             ],
                             "collision_sphere_radii": sphere_radii,
                             "trajectory_path": str(path),
+                            "duration_s": float(candidate_stamps[-1]),
+                            "timing_schema_version": timing_schema_version,
                         },
                     )
                 )
@@ -275,7 +313,10 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                     "top_k_candidates": candidates,
                     "top_k_count": len(candidates),
                     "start_boundary_errors": boundary_errors,
+                    "start_boundary_tolerance": boundary_tolerance,
                     "trajectory_artifact_schema_version": schema_version,
+                    "timing_schema_version": timing_schema_version,
+                    "candidate_specific_timing": schema_version == 3,
                     "best_trajectory_topk_index": best_index,
                 },
             )
@@ -285,4 +326,32 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
                 valid=False,
                 reason=f"{type(error).__name__}: {error}",
                 diagnostics={"request_seq": request_seq, "world_version": world_version},
+            )
+
+
+class SpaceTimeMpdGlobalTrajectoryBackend(DynamicMpdGlobalTrajectoryBackend):
+    """Phase-5 backend that rejects workers without the space-time contract."""
+
+    def __init__(self, *args, expected_timing_mode: str = "phase5_joint", **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.expected_timing_mode = str(expected_timing_mode)
+
+    def warmup(self) -> None:
+        super().warmup()
+        health = self.client.health()
+        space_time = health.get("engine", {}).get("space_time", {})
+        if not (
+            space_time.get("enabled")
+            and space_time.get("candidate_specific_time")
+            and space_time.get("trajectory_schema_version") == 3
+            and space_time.get("timing_schema_version") == 1
+        ):
+            raise MpdClientError(
+                "worker did not report the Phase-5 candidate-specific timing contract"
+            )
+        actual_mode = str(space_time.get("mode", ""))
+        if self.expected_timing_mode and actual_mode != self.expected_timing_mode:
+            raise MpdClientError(
+                f"worker timing mode {actual_mode!r} does not match "
+                f"{self.expected_timing_mode!r}"
             )

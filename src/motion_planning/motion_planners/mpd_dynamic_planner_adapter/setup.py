@@ -20,11 +20,12 @@ setup(
     zip_safe=True,
     maintainer="Gabriel-Ning",
     maintainer_email="guomning@gmail.com",
-    description="Fixed-timing dynamic-world replanning extension for MPD.",
+    description="Dynamic-world and space-time replanning extension for MPD.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
             "dynamic_replan_node = mpd_dynamic_planner_adapter.replan_node:main",
+            "space_time_replan_node = mpd_dynamic_planner_adapter.space_time_replan_node:main",
             "dynamic_world_demo = mpd_dynamic_planner_adapter.world_demo_node:main",
         ],
     },

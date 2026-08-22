@@ -134,3 +134,21 @@ def test_recorder_reads_schema_v2_best_positions(tmp_path):
     with np.load(path, allow_pickle=False) as data:
         positions = _best_positions_from_archive(data)
     assert positions[0].tolist() == [1.0] * 7
+
+
+def test_recorder_reads_schema_v3_best_positions(tmp_path):
+    path = tmp_path / "trajectory-v3.npz"
+    np.savez(
+        path,
+        artifact_schema_version=np.asarray(3, dtype=np.int64),
+        best_trajectory_topk_index=np.asarray(1, dtype=np.int64),
+        topk_positions=np.asarray(
+            [
+                [[0.0] * 7, [0.1] * 7],
+                [[1.0] * 7, [1.1] * 7],
+            ]
+        ),
+    )
+    with np.load(path, allow_pickle=False) as data:
+        positions = _best_positions_from_archive(data)
+    assert positions[0].tolist() == [1.0] * 7

@@ -21,8 +21,8 @@ def _best_positions_from_archive(data) -> np.ndarray:
     if "positions" in data:
         return np.asarray(data["positions"], dtype=np.float64)
     schema_version = int(np.asarray(data["artifact_schema_version"]).item())
-    if schema_version != 2:
-        raise ValueError("omitted positions require trajectory schema v2")
+    if schema_version not in (2, 3):
+        raise ValueError("omitted positions require trajectory schema v2 or v3")
     best_index = int(np.asarray(data["best_trajectory_topk_index"]).item())
     topk_positions = np.asarray(data["topk_positions"], dtype=np.float64)
     if best_index < 0 or best_index >= len(topk_positions):

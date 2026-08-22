@@ -1,0 +1,66 @@
+mpd_space_time_replanner:
+  ros__parameters:
+    socket_path: /tmp/mpd-space-time-runtime.sock
+    timing_mode: phase5_joint
+    scene_id: EnvWarehouseExtraObjectsV00
+    seed: 123
+    worker_timeout_s: 5.0
+    plan_rate_hz: 0.5
+    # The current full candidate-specific DenseCheck takes about 1.6 s on the
+    # local GPU; keep a bounded margin while preserving deadline rejection.
+    planning_budget_s: 2.5
+    commit_margin_s: 0.15
+    handoff_search_horizon_s: 4.0
+    handoff_step_s: 0.05
+    # Must cover the worker's Phase-5 duration_max, not only nominal duration.
+    trajectory_duration_s: 14.0
+    prediction_horizon_s: 18.0
+    max_state_age_s: 0.25
+    max_world_age_s: 0.25
+    plan_only: true
+    joint_state_topic: /franka/joint_states
+    world_observation_topic: /mpd/dynamic_world_observations
+    planned_trajectory_topic: ~/planned_trajectory
+    target_pose_xyzw: ""
+    jtc_action_name: /franka_arm_jtc/follow_joint_trajectory
+    command_lead_s: 0.05
+    prefix_dt_s: 0.05
+    max_start_drift_rad: 0.10
+    enforce_measured_start_drift: true
+    max_handoff_speed_rad_s: 0.20
+    max_q_jump_rad: 0.03
+    max_dq_jump_rad_s: 0.20
+    max_ddq_jump_rad_s2: 2.0
+    bridge_minimum_duration_s: 0.20
+    bridge_sample_dt_s: 0.02
+    bridge_max_velocity_rad_s: 1.5
+    bridge_max_acceleration_rad_s2: 3.0
+    bridge_max_jerk_rad_s3: 15.0
+    bridge_max_active_deviation_rad: 0.08
+    comparison_horizon_s: 2.0
+    near_goal_replan_suppression_s: 2.0
+    comparison_sample_dt_s: 0.02
+    preferred_clearance_m: 0.10
+    cost_kinematic_weight: 1.0
+    cost_tail_kinematic_weight: 1.0
+    cost_clearance_weight: 4.0
+    cost_mpd_weight: 0.10
+    cost_bridge_weight: 0.10
+    cost_switch_penalty: 0.02
+    switching_hysteresis: 0.02
+    minimum_commit_interval_s: 1.0
+    enable_exhaustion_forced_switch: false
+    replacement_retry_reserve_s: 3.0
+    guard_rate_hz: 20.0
+    guard_lookahead_s: 2.0
+    guard_check_dt_s: 0.02
+    guard_minimum_clearance_m: 0.0
+    covariance_sigma: 3.0
+    process_acceleration_std_m_s2: 0.01
+    max_dynamic_objects: 16
+    brake_max_deceleration_rad_s2: 1.0
+    brake_minimum_duration_s: 0.20
+    brake_sample_dt_s: 0.02
+    replay_record_dir: ""
+    replay_env_name: ""
+    replay_static_scene_json: ""
