@@ -134,4 +134,7 @@ run-local resident-worker socket without changing the original defaults.
 
 For the complete ToDrawer fake-hardware-to-video command, use
 `mpd/scripts/isaaclab/run_dynamic_demo_pipeline.sh --profile to_drawer` from the MPD
-repository.
+repository. The pipeline defaults to Phase 5 `phase5_joint`; select the preserved
+fixed-timing path with `--phase phase4`, or choose a Phase 5 ablation with
+`--phase phase5 --timing-mode phase5_timing_only` (or
+`phase5_scalar_duration`).
