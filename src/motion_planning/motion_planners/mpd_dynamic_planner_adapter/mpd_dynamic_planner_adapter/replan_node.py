@@ -38,6 +38,7 @@ from .collision_guard import (
     collision_plan_from_result,
     extend_collision_plan_with_terminal_hold,
     splice_collision_plans,
+    validate_collision_plan_actual_duration,
 )
 from .dynamic_world import DynamicWorldError, DynamicWorldManager, DynamicWorldSnapshot
 from .candidate_selector import (
@@ -1002,14 +1003,11 @@ class MpdDynamicReplanNode(Node):
                         )
                         continue
                     try:
-                        comparison_collision = extend_collision_plan_with_terminal_hold(
-                            new_collision, comparison_end
-                        )
-                        comparison_risk = self._guard.validate(
-                            comparison_collision,
+                        comparison_risk = validate_collision_plan_actual_duration(
+                            self._guard,
+                            new_collision,
                             evaluation_world,
                             handoff,
-                            comparison_end,
                         )
                     except ValueError as error:
                         self._record_candidate_rejection(

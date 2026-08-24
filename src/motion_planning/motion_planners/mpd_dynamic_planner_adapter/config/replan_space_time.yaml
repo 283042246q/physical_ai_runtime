@@ -12,7 +12,8 @@ mpd_space_time_replanner:
     commit_margin_s: 0.15
     handoff_search_horizon_s: 4.0
     handoff_step_s: 0.05
-    # Must cover the worker's Phase-5 duration_max, not only nominal duration.
+    # Common cost/prediction horizon; candidate hard collision checks stop at
+    # each Phase-5 artifact's actual duration.
     trajectory_duration_s: 14.0
     prediction_horizon_s: 18.0
     max_state_age_s: 0.25

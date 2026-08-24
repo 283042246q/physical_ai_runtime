@@ -150,6 +150,22 @@ class DynamicTrajectoryGuard:
         )
 
 
+def validate_collision_plan_actual_duration(
+    guard: DynamicTrajectoryGuard,
+    plan: TimedCollisionPlan,
+    world: DynamicWorldSnapshot,
+    start_unix_s: float,
+) -> TrajectoryRisk:
+    """Validate only the time interval represented by the candidate plan."""
+
+    return guard.validate(
+        plan,
+        world,
+        start_unix_s,
+        float(plan.absolute_times_s[-1]),
+    )
+
+
 def extend_collision_plan_with_terminal_hold(
     plan: TimedCollisionPlan,
     end_unix_s: float,

@@ -5,6 +5,7 @@ from mpd_dynamic_planner_adapter.collision_guard import (
     DynamicTrajectoryGuard,
     TimedCollisionPlan,
     extend_collision_plan_with_terminal_hold,
+    validate_collision_plan_actual_duration,
 )
 from mpd_dynamic_planner_adapter.dynamic_world import (
     DynamicObjectSnapshot,
@@ -98,3 +99,25 @@ def test_terminal_hold_extension_keeps_last_robot_occupancy_for_future_checks():
     )
     assert not risk.safe
     assert risk.first_collision_unix_s == pytest.approx(1.85, abs=0.02)
+
+
+def test_candidate_hard_collision_check_stops_at_actual_duration():
+    plan = TimedCollisionPlan(
+        absolute_times_s=np.asarray([0.0, 1.0]),
+        sphere_positions=np.asarray([[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]]),
+        sphere_radii=np.asarray([0.05]),
+    )
+    world = _world(_object(position=(3.0, 0.0, 0.0), velocity=(-1.0, 0.0, 0.0)))
+
+    actual = validate_collision_plan_actual_duration(
+        DynamicTrajectoryGuard(check_dt_s=0.01), plan, world, 0.0
+    )
+    held = extend_collision_plan_with_terminal_hold(plan, 3.0)
+    fixed_horizon = DynamicTrajectoryGuard(check_dt_s=0.01).validate(
+        held, world, 0.0, 3.0
+    )
+
+    assert actual.safe
+    assert actual.checked_samples == 101
+    assert not fixed_horizon.safe
+    assert fixed_horizon.first_collision_unix_s == pytest.approx(1.85, abs=0.02)
