@@ -55,6 +55,15 @@ from .quintic_bridge import (
 from .replay_recorder import DynamicReplayRecorder
 
 
+CANDIDATE_REJECTION_REASONS = (
+    "invalid_time_interval",
+    "dynamic_collision",
+    "bridge_limit",
+    "kinematic_cost_non_finite",
+    "world_version_changed",
+)
+
+
 @dataclass(frozen=True)
 class DynamicPlanningJob:
     generation: int
@@ -70,6 +79,19 @@ class DynamicPlanningJob:
 
 def _stamp_s(stamp) -> float:
     return float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
+
+def _validation_start_unix_s(
+    world: DynamicWorldSnapshot, now_unix_s: float | None = None
+) -> float:
+    """Sample validation time after the world and keep it inside its epoch."""
+    wall_now = time.time() if now_unix_s is None else float(now_unix_s)
+    world_start = math.nextafter(world.stamp_unix_ns * 1e-9, math.inf)
+    return max(wall_now, world_start)
+
+
+def _risk_rejection_reason(risk) -> str:
+    return "invalid_time_interval" if risk.checked_samples == 0 else "dynamic_collision"
 
 
 def _duration(seconds: float):
@@ -204,7 +226,7 @@ class MpdDynamicReplanNode(Node):
             "replacement_retry_reserve_s": 3.0,
             "enable_exhaustion_forced_switch": False,
             "guard_rate_hz": 20.0,
-            "guard_lookahead_s": 3.0,
+            "guard_lookahead_s": 2.0,
             "guard_check_dt_s": 0.02,
             "guard_minimum_clearance_m": 0.0,
             "covariance_sigma": 3.0,
@@ -334,6 +356,7 @@ class MpdDynamicReplanNode(Node):
         self._last_switch_decision = "not_evaluated"
         self._last_old_cost = math.inf
         self._last_new_cost = math.inf
+        self._last_candidate_rejections: list[dict[str, object]] = []
         replay_record_dir = str(value("replay_record_dir"))
         self._replay_recorder = (
             DynamicReplayRecorder(
@@ -709,6 +732,7 @@ class MpdDynamicReplanNode(Node):
             self._counters["accepted"] += 1
 
     def _commit(self, job: DynamicPlanningJob, result) -> bool:
+        self._last_candidate_rejections = []
         latest_world = self._world_manager.snapshot
         if latest_world is None or self._state is None:
             return False
@@ -827,10 +851,11 @@ class MpdDynamicReplanNode(Node):
         selected_risk = None
         selected_decision = None
         old_safe = self._active_plan is None
-        for _attempt in range(2):
+        for attempt in range(2):
             evaluation_world = self._world_manager.snapshot
             if evaluation_world is None:
                 return False
+            validation_now = _validation_start_unix_s(evaluation_world)
             candidate_costs = []
             candidate_artifacts = {}
             for index, candidate in enumerate(candidates):
@@ -876,6 +901,17 @@ class MpdDynamicReplanNode(Node):
                             )
                     else:
                         bridge_deviation = 0.0
+                except (QuinticBridgeError, ValueError) as error:
+                    self._record_candidate_rejection(
+                        index,
+                        "bridge_limit",
+                        attempt=attempt,
+                        stage="quintic_bridge",
+                        detail=str(error),
+                    )
+                    continue
+
+                try:
                     new_collision = collision_plan_from_result(candidate, handoff)
                     active_collision = (
                         None
@@ -894,18 +930,38 @@ class MpdDynamicReplanNode(Node):
                     monitoring_collision = splice_collision_plans(
                         active_collision,
                         merged_collision,
-                        now,
+                        validation_now,
                         bridge_start,
                         self._splice_options["prefix_dt_s"],
                     )
                     risk = self._guard.validate(
                         monitoring_collision,
                         evaluation_world,
-                        now,
+                        validation_now,
                         float(monitoring_collision.absolute_times_s[-1]),
                     )
                     if not risk.safe:
+                        self._record_candidate_rejection(
+                            index,
+                            _risk_rejection_reason(risk),
+                            attempt=attempt,
+                            stage="monitoring_guard",
+                            metrics=self._risk_rejection_metrics(
+                                risk, evaluation_world, validation_now
+                            ),
+                        )
                         continue
+                except (KeyError, ValueError) as error:
+                    self._record_candidate_rejection(
+                        index,
+                        "invalid_time_interval",
+                        attempt=attempt,
+                        stage="monitoring_guard",
+                        detail=str(error),
+                    )
+                    continue
+
+                try:
                     # Compare both alternatives from the identical handoff state.
                     # The bridge is scored separately, while this first window and
                     # the following tail cover the complete future command horizon.
@@ -937,16 +993,43 @@ class MpdDynamicReplanNode(Node):
                         sample_dt_s=self._comparison_sample_dt_s,
                         hold_after_end=True,
                     )
-                    comparison_collision = extend_collision_plan_with_terminal_hold(
-                        new_collision, comparison_end
-                    )
-                    comparison_risk = self._guard.validate(
-                        comparison_collision,
-                        evaluation_world,
-                        handoff,
-                        comparison_end,
-                    )
+                    if not math.isfinite(kinematic) or not math.isfinite(tail_kinematic):
+                        self._record_candidate_rejection(
+                            index,
+                            "kinematic_cost_non_finite",
+                            attempt=attempt,
+                            stage="common_window_cost",
+                        )
+                        continue
+                    try:
+                        comparison_collision = extend_collision_plan_with_terminal_hold(
+                            new_collision, comparison_end
+                        )
+                        comparison_risk = self._guard.validate(
+                            comparison_collision,
+                            evaluation_world,
+                            handoff,
+                            comparison_end,
+                        )
+                    except ValueError as error:
+                        self._record_candidate_rejection(
+                            index,
+                            "invalid_time_interval",
+                            attempt=attempt,
+                            stage="comparison_guard",
+                            detail=str(error),
+                        )
+                        continue
                     if not comparison_risk.safe:
+                        self._record_candidate_rejection(
+                            index,
+                            _risk_rejection_reason(comparison_risk),
+                            attempt=attempt,
+                            stage="comparison_guard",
+                            metrics=self._risk_rejection_metrics(
+                                comparison_risk, evaluation_world, handoff
+                            ),
+                        )
                         continue
                     clearance = clearance_cost(
                         comparison_risk.minimum_clearance_m,
@@ -968,6 +1051,14 @@ class MpdDynamicReplanNode(Node):
                         + self._cost_weights["bridge"] * bridge_cost
                         + (self._cost_weights["switch"] if self._active_plan is not None else 0.0)
                     )
+                    if not math.isfinite(total):
+                        self._record_candidate_rejection(
+                            index,
+                            "kinematic_cost_non_finite",
+                            attempt=attempt,
+                            stage="composite_cost",
+                        )
+                        continue
                     candidate_costs.append(
                         CandidateCost(
                             index,
@@ -991,7 +1082,14 @@ class MpdDynamicReplanNode(Node):
                         },
                     )
                     candidate_artifacts[index] = (merged, monitoring_collision, risk)
-                except (KeyError, QuinticBridgeError, ValueError):
+                except (KeyError, ValueError) as error:
+                    self._record_candidate_rejection(
+                        index,
+                        "kinematic_cost_non_finite",
+                        attempt=attempt,
+                        stage="common_window_cost",
+                        detail=str(error),
+                    )
                     continue
 
             old_cost = math.inf
@@ -1084,6 +1182,13 @@ class MpdDynamicReplanNode(Node):
             if current_world is None:
                 return False
             if current_world.version != evaluation_world.version:
+                for index in range(len(candidates)):
+                    self._record_candidate_rejection(
+                        index,
+                        "world_version_changed",
+                        attempt=attempt,
+                        stage="top_k_revalidation",
+                    )
                 continue
             selected_decision = decision
             if decision.candidate_index is not None:
@@ -1095,6 +1200,7 @@ class MpdDynamicReplanNode(Node):
         if selected_decision is None:
             self._counters["world_revalidation_rejected"] += 1
             self._last_switch_decision = "world_changed_during_top_k_revalidation"
+            self._log_candidate_rejections()
             return False
         self._last_switch_decision = selected_decision.reason
         self._last_old_cost = selected_decision.old_cost
@@ -1110,20 +1216,72 @@ class MpdDynamicReplanNode(Node):
                 result,
                 start_unix_s=handoff,
             )
+            self._log_candidate_rejections()
             if not old_safe and selected_decision.reason == "no_latest_world_safe_candidate":
                 self._controlled_brake("no_latest_world_safe_candidate", clear_target=True)
             return False
 
+        selected_index = selected_decision.candidate_index
         final_world = self._world_manager.snapshot
         if final_world is None:
+            if selected_index is not None:
+                self._record_candidate_rejection(
+                    selected_index,
+                    "world_version_changed",
+                    attempt=attempt,
+                    stage="final_guard",
+                )
+                self._log_candidate_rejections()
             return False
-        final_risk = self._guard.validate(
-            selected_collision,
-            final_world,
-            now,
-            float(selected_collision.absolute_times_s[-1]),
-        )
+        final_validation_now = _validation_start_unix_s(final_world)
+        try:
+            final_risk = self._guard.validate(
+                selected_collision,
+                final_world,
+                final_validation_now,
+                float(selected_collision.absolute_times_s[-1]),
+            )
+        except ValueError as error:
+            if selected_index is not None:
+                self._record_candidate_rejection(
+                    selected_index,
+                    "invalid_time_interval",
+                    attempt=attempt,
+                    stage="final_guard",
+                    detail=str(error),
+                )
+            self._counters["world_revalidation_rejected"] += 1
+            self._last_switch_decision = "latest_world_final_revalidation_failed"
+            self._log_candidate_rejections()
+            if not old_safe:
+                self._controlled_brake(
+                    "latest_world_final_revalidation_failed", clear_target=True
+                )
+            return False
         world_after_final_check = self._world_manager.snapshot
+        if not final_risk.safe and selected_index is not None:
+            self._record_candidate_rejection(
+                selected_index,
+                _risk_rejection_reason(final_risk),
+                attempt=attempt,
+                stage="final_guard",
+                metrics=self._risk_rejection_metrics(
+                    final_risk, final_world, final_validation_now
+                ),
+            )
+        if (
+            selected_index is not None
+            and (
+                world_after_final_check is None
+                or world_after_final_check.version != final_world.version
+            )
+        ):
+            self._record_candidate_rejection(
+                selected_index,
+                "world_version_changed",
+                attempt=attempt,
+                stage="final_guard",
+            )
         if (
             not final_risk.safe
             or world_after_final_check is None
@@ -1131,6 +1289,7 @@ class MpdDynamicReplanNode(Node):
         ):
             self._counters["world_revalidation_rejected"] += 1
             self._last_switch_decision = "latest_world_final_revalidation_failed"
+            self._log_candidate_rejections()
             if not old_safe:
                 self._controlled_brake(
                     "latest_world_final_revalidation_failed", clear_target=True
@@ -1170,19 +1329,64 @@ class MpdDynamicReplanNode(Node):
         self._counters["goal_submitted"] += 1
         return True
 
+    def _record_candidate_rejection(
+        self,
+        candidate_index: int,
+        reason: str,
+        *,
+        attempt: int,
+        stage: str,
+        detail: str | None = None,
+        metrics: dict[str, object] | None = None,
+    ) -> None:
+        if reason not in CANDIDATE_REJECTION_REASONS:
+            raise ValueError(f"unsupported candidate rejection reason: {reason}")
+        rejection: dict[str, object] = {
+            "candidate_index": int(candidate_index),
+            "attempt": int(attempt) + 1,
+            "stage": str(stage),
+            "reason": reason,
+        }
+        if detail:
+            rejection["detail"] = detail
+        if metrics:
+            rejection.update(metrics)
+        self._last_candidate_rejections.append(rejection)
+
+    @staticmethod
+    def _risk_rejection_metrics(risk, world, validation_start_unix_s: float):
+        return {
+            "world_version": int(world.version),
+            "world_stamp_unix_s": world.stamp_unix_ns * 1e-9,
+            "validation_start_unix_s": float(validation_start_unix_s),
+            "minimum_clearance_m": float(risk.minimum_clearance_m),
+            "first_collision_unix_s": risk.first_collision_unix_s,
+            "checked_samples": int(risk.checked_samples),
+        }
+
+    def _log_candidate_rejections(self) -> None:
+        if self._last_candidate_rejections:
+            self.get_logger().warning(
+                "top-K candidate rejections: "
+                + json.dumps(self._last_candidate_rejections, sort_keys=True)
+            )
+
     def _guard_active_plan(self) -> None:
         if self._emergency_stopped or self._braking or self._active_collision_plan is None:
             return
         world = self._world_manager.snapshot
         if world is None:
             return
-        now = time.time()
-        end = min(now + self._guard_lookahead_s, world.valid_until_unix_ns * 1e-9)
+        validation_now = _validation_start_unix_s(world)
+        end = min(
+            validation_now + self._guard_lookahead_s,
+            world.valid_until_unix_ns * 1e-9,
+        )
         try:
             guarded_plan = extend_collision_plan_with_terminal_hold(
                 self._active_collision_plan, end
             )
-            risk = self._guard.validate(guarded_plan, world, now, end)
+            risk = self._guard.validate(guarded_plan, world, validation_now, end)
         except ValueError:
             return
         self._last_guard_clearance_m = risk.minimum_clearance_m
@@ -1308,6 +1512,14 @@ class MpdDynamicReplanNode(Node):
                 "switch_decision": self._last_switch_decision,
                 "old_common_window_cost": self._last_old_cost,
                 "new_common_window_cost": self._last_new_cost,
+                "candidate_rejections": self._last_candidate_rejections,
+                "candidate_rejection_counts": {
+                    reason: sum(
+                        rejection["reason"] == reason
+                        for rejection in self._last_candidate_rejections
+                    )
+                    for reason in CANDIDATE_REJECTION_REASONS
+                },
                 "latency_samples": len(self._latencies_s),
                 **self._counters,
             },
