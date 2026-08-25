@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import rclpy
 
 from mpd_dynamic_planner_adapter.replan_node import MpdDynamicReplanNode
+from mpd_dynamic_planner_adapter.space_time_replan_node import MpdSpaceTimeReplanNode
 
 
 def test_dynamic_replanner_starts_without_target_or_world():
@@ -14,7 +15,21 @@ def test_dynamic_replanner_starts_without_target_or_world():
         assert node._plan_only
         assert not node._goal_reached
         assert node._guard_lookahead_s == 2.0
+        assert node._clearance_score_mode == "minimum"
         assert node._backend.client.socket_path.name == "mpd-dynamic-runtime.sock"
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+def test_phase5_defaults_to_common_window_mean_cvar_clearance():
+    rclpy.init()
+    node = MpdSpaceTimeReplanNode()
+    try:
+        assert node._clearance_score_mode == "mean_cvar"
+        assert node._clearance_cvar_fraction == 0.10
+        assert node._clearance_mean_weight == 0.25
+        assert node._clearance_cvar_weight == 0.75
     finally:
         node.destroy_node()
         rclpy.shutdown()

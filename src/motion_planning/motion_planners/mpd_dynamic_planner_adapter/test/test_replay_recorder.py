@@ -118,6 +118,38 @@ def test_recorder_flush_checkpoints_before_shutdown(tmp_path):
     assert manifest["plans"][0]["active_until_s"] == 0.5
 
 
+def test_recorder_preserves_top_k_clearance_diagnostics(tmp_path):
+    recorder = _recorder(tmp_path)
+    recorder.record_world(
+        DynamicWorldSnapshot(1, "fr3_link0", 1_000_000_000, 20_000_000_000, ())
+    )
+    result = _result()
+    result.diagnostics["top_k_clearance_risk"] = [
+        {
+            "candidate_index": 0,
+            "duration_s": 8.5,
+            "hard_minimum_clearance_m": 0.08,
+            "common_window_minimum_clearance_m": 0.03,
+            "clearance_mean_cost": 0.02,
+            "clearance_cvar_cost": 0.20,
+            "terminal_hold_minimum_clearance_m": 0.03,
+        }
+    ]
+    recorder.record_candidate(
+        40,
+        result,
+        start_unix_s=1.1,
+        handoff_unix_s=1.1,
+    )
+
+    manifest = json.loads(
+        recorder.close(unix_ns=2_000_000_000).read_text(encoding="utf-8")
+    )
+    assert manifest["plans"][0]["candidate_clearance_diagnostics"] == (
+        result.diagnostics["top_k_clearance_risk"]
+    )
+
+
 def test_recorder_reads_schema_v2_best_positions(tmp_path):
     path = tmp_path / "trajectory.npz"
     np.savez(

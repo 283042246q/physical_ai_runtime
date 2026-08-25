@@ -65,6 +65,13 @@ CANDIDATE_REJECTION_REASONS = (
 )
 
 
+def _finite_diagnostic(value):
+    if value is None:
+        return None
+    output = float(value)
+    return output if math.isfinite(output) else None
+
+
 @dataclass(frozen=True)
 class DynamicPlanningJob:
     generation: int
@@ -176,6 +183,8 @@ def _prepend_execution_prefix(
 
 
 class MpdDynamicReplanNode(Node):
+    _default_clearance_score_mode = "minimum"
+
     def __init__(self) -> None:
         super().__init__("mpd_dynamic_replanner")
         defaults = {
@@ -216,6 +225,10 @@ class MpdDynamicReplanNode(Node):
             "near_goal_replan_suppression_s": 2.0,
             "comparison_sample_dt_s": 0.02,
             "preferred_clearance_m": 0.10,
+            "clearance_score_mode": self._default_clearance_score_mode,
+            "clearance_cvar_fraction": 0.10,
+            "clearance_mean_weight": 0.25,
+            "clearance_cvar_weight": 0.75,
             "cost_kinematic_weight": 1.0,
             "cost_tail_kinematic_weight": 1.0,
             "cost_clearance_weight": 4.0,
@@ -284,6 +297,10 @@ class MpdDynamicReplanNode(Node):
         )
         self._comparison_sample_dt_s = float(value("comparison_sample_dt_s"))
         self._preferred_clearance_m = float(value("preferred_clearance_m"))
+        self._clearance_score_mode = str(value("clearance_score_mode"))
+        self._clearance_cvar_fraction = float(value("clearance_cvar_fraction"))
+        self._clearance_mean_weight = float(value("clearance_mean_weight"))
+        self._clearance_cvar_weight = float(value("clearance_cvar_weight"))
         self._cost_weights = {
             "kinematic": float(value("cost_kinematic_weight")),
             "tail_kinematic": float(value("cost_tail_kinematic_weight")),
@@ -313,6 +330,16 @@ class MpdDynamicReplanNode(Node):
             raise ValueError("dynamic handoff comparison parameters are invalid")
         if any(weight < 0.0 for weight in self._cost_weights.values()):
             raise ValueError("dynamic handoff cost weights must be non-negative")
+        if self._clearance_score_mode not in {"minimum", "mean_cvar"}:
+            raise ValueError("clearance_score_mode must be 'minimum' or 'mean_cvar'")
+        if not 0.0 < self._clearance_cvar_fraction <= 1.0:
+            raise ValueError("clearance_cvar_fraction must lie in (0, 1]")
+        if (
+            self._clearance_mean_weight < 0.0
+            or self._clearance_cvar_weight < 0.0
+            or self._clearance_mean_weight + self._clearance_cvar_weight <= 0.0
+        ):
+            raise ValueError("clearance mean/CVaR weights must be non-negative and non-zero")
         self._brake_options = {
             "max_deceleration_rad_s2": float(value("brake_max_deceleration_rad_s2")),
             "minimum_duration_s": float(value("brake_minimum_duration_s")),
@@ -358,6 +385,7 @@ class MpdDynamicReplanNode(Node):
         self._last_old_cost = math.inf
         self._last_new_cost = math.inf
         self._last_candidate_rejections: list[dict[str, object]] = []
+        self._last_candidate_clearance_diagnostics: list[dict[str, object]] = []
         replay_record_dir = str(value("replay_record_dir"))
         self._replay_recorder = (
             DynamicReplayRecorder(
@@ -734,6 +762,7 @@ class MpdDynamicReplanNode(Node):
 
     def _commit(self, job: DynamicPlanningJob, result) -> bool:
         self._last_candidate_rejections = []
+        self._last_candidate_clearance_diagnostics = []
         latest_world = self._world_manager.snapshot
         if latest_world is None or self._state is None:
             return False
@@ -846,6 +875,25 @@ class MpdDynamicReplanNode(Node):
             if score_range <= 1e-12
             else (raw_scores - float(raw_scores.min())) / score_range
         )
+        self._last_candidate_clearance_diagnostics = [
+            {
+                "candidate_index": index,
+                "duration_s": float(candidate.points[-1].time_from_start_s),
+                "hard_minimum_clearance_m": None,
+                "common_window_minimum_clearance_m": None,
+                "clearance_mean_cost": None,
+                "clearance_cvar_cost": None,
+                "terminal_hold_minimum_clearance_m": None,
+                "kinematic_cost": None,
+                "tail_kinematic_cost": None,
+                "clearance_score": None,
+                "mpd_normalized_cost": None,
+                "bridge_cost": None,
+                "switch_penalty_contribution": None,
+                "composite_cost": None,
+            }
+            for index, candidate in enumerate(candidates)
+        ]
 
         selected = None
         selected_collision = None
@@ -860,6 +908,7 @@ class MpdDynamicReplanNode(Node):
             candidate_costs = []
             candidate_artifacts = {}
             for index, candidate in enumerate(candidates):
+                clearance_diagnostics = self._last_candidate_clearance_diagnostics[index]
                 try:
                     merged = splice_with_quintic_bridge(
                         current_state=bridge_initial,
@@ -914,6 +963,62 @@ class MpdDynamicReplanNode(Node):
 
                 try:
                     new_collision = collision_plan_from_result(candidate, handoff)
+                    comparison_end = handoff + self._trajectory_duration_s
+                    hard_risk = validate_collision_plan_actual_duration(
+                        self._guard,
+                        new_collision,
+                        evaluation_world,
+                        handoff,
+                    )
+                    if self._clearance_score_mode == "mean_cvar":
+                        score_collision = extend_collision_plan_with_terminal_hold(
+                            new_collision, comparison_end
+                        )
+                        score_risk = self._guard.validate(
+                            score_collision,
+                            evaluation_world,
+                            handoff,
+                            comparison_end,
+                            preferred_clearance_m=self._preferred_clearance_m,
+                            cvar_fraction=self._clearance_cvar_fraction,
+                            terminal_hold_start_unix_s=float(
+                                new_collision.absolute_times_s[-1]
+                            ),
+                        )
+                    else:
+                        # Preserve the Phase-4 single-window collision workload.
+                        score_risk = hard_risk
+                    clearance_diagnostics.update(
+                        hard_minimum_clearance_m=_finite_diagnostic(
+                            hard_risk.minimum_clearance_m
+                        ),
+                        common_window_minimum_clearance_m=_finite_diagnostic(
+                            score_risk.minimum_clearance_m
+                        ),
+                        clearance_mean_cost=_finite_diagnostic(
+                            score_risk.clearance_mean_cost
+                        ),
+                        clearance_cvar_cost=_finite_diagnostic(
+                            score_risk.clearance_cvar_cost
+                        ),
+                        terminal_hold_minimum_clearance_m=_finite_diagnostic(
+                            score_risk.terminal_hold_minimum_clearance_m
+                        ),
+                    )
+                    candidate.diagnostics["clearance_risk"] = dict(
+                        clearance_diagnostics
+                    )
+                    if not hard_risk.safe:
+                        self._record_candidate_rejection(
+                            index,
+                            _risk_rejection_reason(hard_risk),
+                            attempt=attempt,
+                            stage="comparison_guard",
+                            metrics=self._risk_rejection_metrics(
+                                hard_risk, evaluation_world, handoff
+                            ),
+                        )
+                        continue
                     active_collision = (
                         None
                         if self._active_collision_plan is None
@@ -967,7 +1072,6 @@ class MpdDynamicReplanNode(Node):
                     # The bridge is scored separately, while this first window and
                     # the following tail cover the complete future command horizon.
                     window_end = handoff + self._comparison_horizon_s
-                    comparison_end = handoff + self._trajectory_duration_s
                     kinematic = common_window_kinematic_cost(
                         merged,
                         trajectory_start_unix_s=bridge_start,
@@ -1002,37 +1106,18 @@ class MpdDynamicReplanNode(Node):
                             stage="common_window_cost",
                         )
                         continue
-                    try:
-                        comparison_risk = validate_collision_plan_actual_duration(
-                            self._guard,
-                            new_collision,
-                            evaluation_world,
-                            handoff,
+                    if self._clearance_score_mode == "mean_cvar":
+                        clearance = (
+                            self._clearance_mean_weight
+                            * float(score_risk.clearance_mean_cost)
+                            + self._clearance_cvar_weight
+                            * float(score_risk.clearance_cvar_cost)
                         )
-                    except ValueError as error:
-                        self._record_candidate_rejection(
-                            index,
-                            "invalid_time_interval",
-                            attempt=attempt,
-                            stage="comparison_guard",
-                            detail=str(error),
+                    else:
+                        clearance = clearance_cost(
+                            hard_risk.minimum_clearance_m,
+                            self._preferred_clearance_m,
                         )
-                        continue
-                    if not comparison_risk.safe:
-                        self._record_candidate_rejection(
-                            index,
-                            _risk_rejection_reason(comparison_risk),
-                            attempt=attempt,
-                            stage="comparison_guard",
-                            metrics=self._risk_rejection_metrics(
-                                comparison_risk, evaluation_world, handoff
-                            ),
-                        )
-                        continue
-                    clearance = clearance_cost(
-                        comparison_risk.minimum_clearance_m,
-                        self._preferred_clearance_m,
-                    )
                     bridge_stats = merged.diagnostics["bridge"]
                     bridge_cost = (
                         float(bridge_stats["duration_s"])
@@ -1057,6 +1142,22 @@ class MpdDynamicReplanNode(Node):
                             stage="composite_cost",
                         )
                         continue
+                    clearance_diagnostics.update(
+                        kinematic_cost=float(kinematic),
+                        tail_kinematic_cost=float(tail_kinematic),
+                        clearance_score=float(clearance),
+                        mpd_normalized_cost=float(normalized_scores[index]),
+                        bridge_cost=float(bridge_cost),
+                        switch_penalty_contribution=(
+                            self._cost_weights["switch"]
+                            if self._active_plan is not None
+                            else 0.0
+                        ),
+                        composite_cost=float(total),
+                    )
+                    candidate.diagnostics["clearance_risk"] = dict(
+                        clearance_diagnostics
+                    )
                     candidate_costs.append(
                         CandidateCost(
                             index,
@@ -1078,6 +1179,7 @@ class MpdDynamicReplanNode(Node):
                             "mpd": float(normalized_scores[index]),
                             "bridge": bridge_cost,
                         },
+                        clearance_risk=dict(clearance_diagnostics),
                     )
                     candidate_artifacts[index] = (merged, monitoring_collision, risk)
                 except (KeyError, ValueError) as error:
@@ -1099,11 +1201,34 @@ class MpdDynamicReplanNode(Node):
                     old_comparison_collision = extend_collision_plan_with_terminal_hold(
                         self._active_collision_plan, comparison_end
                     )
-                    old_risk = self._guard.validate(
-                        old_comparison_collision,
-                        evaluation_world,
-                        handoff,
-                        comparison_end,
+                    if self._clearance_score_mode == "mean_cvar":
+                        old_score_risk = self._guard.validate(
+                            old_comparison_collision,
+                            evaluation_world,
+                            handoff,
+                            comparison_end,
+                            preferred_clearance_m=self._preferred_clearance_m,
+                            cvar_fraction=self._clearance_cvar_fraction,
+                            terminal_hold_start_unix_s=float(
+                                self._active_collision_plan.absolute_times_s[-1]
+                            ),
+                        )
+                    else:
+                        old_score_risk = self._guard.validate(
+                            old_comparison_collision,
+                            evaluation_world,
+                            handoff,
+                            comparison_end,
+                        )
+                    old_hard_risk = (
+                        validate_collision_plan_actual_duration(
+                            self._guard,
+                            self._active_collision_plan,
+                            evaluation_world,
+                            handoff,
+                        )
+                        if self._clearance_score_mode == "mean_cvar"
+                        else old_score_risk
                     )
                     old_kinematic = common_window_kinematic_cost(
                         self._active_plan.result,
@@ -1132,20 +1257,29 @@ class MpdDynamicReplanNode(Node):
                         hold_after_end=True,
                     )
                     old_safe = (
-                        old_risk.safe
+                        old_hard_risk.safe
                         and math.isfinite(old_kinematic)
                         and math.isfinite(old_tail_kinematic)
                     )
                     if old_safe:
+                        if self._clearance_score_mode == "mean_cvar":
+                            old_clearance = (
+                                self._clearance_mean_weight
+                                * float(old_score_risk.clearance_mean_cost)
+                                + self._clearance_cvar_weight
+                                * float(old_score_risk.clearance_cvar_cost)
+                            )
+                        else:
+                            old_clearance = clearance_cost(
+                                old_score_risk.minimum_clearance_m,
+                                self._preferred_clearance_m,
+                            )
                         old_cost = (
                             self._cost_weights["kinematic"] * old_kinematic
                             + self._cost_weights["tail_kinematic"]
                             * old_tail_kinematic
                             + self._cost_weights["clearance"]
-                            * clearance_cost(
-                                old_risk.minimum_clearance_m,
-                                self._preferred_clearance_m,
-                            )
+                            * old_clearance
                         )
                 except ValueError:
                     old_safe = False
@@ -1302,6 +1436,9 @@ class MpdDynamicReplanNode(Node):
             "bridge_s": handoff - bridge_start,
             "mpd_suffix_s": selected.points[-1].time_from_start_s - (handoff - bridge_start),
         }
+        selected.diagnostics["top_k_clearance_risk"] = [
+            dict(item) for item in self._last_candidate_clearance_diagnostics
+        ]
         selected.diagnostics["switch_decision"] = selected_decision.__dict__
         message = self._to_message(selected, job.bridge_start_unix_ns)
         self._trajectory_publisher.publish(message)
@@ -1511,6 +1648,9 @@ class MpdDynamicReplanNode(Node):
                 "old_common_window_cost": self._last_old_cost,
                 "new_common_window_cost": self._last_new_cost,
                 "candidate_rejections": self._last_candidate_rejections,
+                "candidate_clearance_diagnostics": (
+                    self._last_candidate_clearance_diagnostics
+                ),
                 "candidate_rejection_counts": {
                     reason: sum(
                         rejection["reason"] == reason

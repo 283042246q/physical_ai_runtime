@@ -42,6 +42,12 @@ mpd_space_time_replanner:
     near_goal_replan_suppression_s: 2.0
     comparison_sample_dt_s: 0.02
     preferred_clearance_m: 0.10
+    # Hard rejection stops at each candidate's actual duration. Ranking uses a
+    # shared 14 s terminal-hold window and a normalized mean/CVaR clearance cost.
+    clearance_score_mode: mean_cvar
+    clearance_cvar_fraction: 0.10
+    clearance_mean_weight: 0.25
+    clearance_cvar_weight: 0.75
     cost_kinematic_weight: 1.0
     cost_tail_kinematic_weight: 1.0
     cost_clearance_weight: 4.0

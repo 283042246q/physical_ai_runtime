@@ -121,3 +121,100 @@ def test_candidate_hard_collision_check_stops_at_actual_duration():
     assert actual.checked_samples == 101
     assert not fixed_horizon.safe
     assert fixed_horizon.first_collision_unix_s == pytest.approx(1.85, abs=0.02)
+
+
+def test_common_window_clearance_statistics_include_terminal_hold():
+    plan = TimedCollisionPlan(
+        absolute_times_s=np.asarray([0.0, 1.0]),
+        sphere_positions=np.asarray([[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]]),
+        sphere_radii=np.asarray([0.05]),
+    )
+    world = _world(_object(position=(3.0, 0.0, 0.0), velocity=(-1.0, 0.0, 0.0)))
+    guard = DynamicTrajectoryGuard(check_dt_s=0.01)
+
+    hard_risk = validate_collision_plan_actual_duration(guard, plan, world, 0.0)
+    score_risk = guard.validate(
+        extend_collision_plan_with_terminal_hold(plan, 3.0),
+        world,
+        0.0,
+        3.0,
+        preferred_clearance_m=0.10,
+        cvar_fraction=0.10,
+        terminal_hold_start_unix_s=1.0,
+    )
+
+    assert hard_risk.safe
+    assert not score_risk.safe
+    assert score_risk.minimum_clearance_m < hard_risk.minimum_clearance_m
+    assert score_risk.clearance_mean_cost > 0.0
+    assert score_risk.clearance_cvar_cost >= score_risk.clearance_mean_cost
+    assert score_risk.terminal_hold_minimum_clearance_m == pytest.approx(
+        score_risk.minimum_clearance_m
+    )
+
+
+def test_clearance_profile_parameters_fail_closed():
+    plan = TimedCollisionPlan(
+        absolute_times_s=np.asarray([0.0, 1.0]),
+        sphere_positions=np.zeros((2, 1, 3)),
+        sphere_radii=np.asarray([0.01]),
+    )
+    guard = DynamicTrajectoryGuard()
+
+    with pytest.raises(ValueError, match="preferred_clearance_m"):
+        guard.validate(plan, _world(_object()), 0.0, 1.0, preferred_clearance_m=0.0)
+    with pytest.raises(ValueError, match="cvar_fraction"):
+        guard.validate(
+            plan,
+            _world(_object()),
+            0.0,
+            1.0,
+            preferred_clearance_m=0.1,
+            cvar_fraction=0.0,
+        )
+
+
+def test_common_window_score_is_independent_of_original_plan_duration():
+    short = TimedCollisionPlan(
+        absolute_times_s=np.asarray([0.0, 1.0]),
+        sphere_positions=np.asarray([[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]]),
+        sphere_radii=np.asarray([0.05]),
+    )
+    long = TimedCollisionPlan(
+        absolute_times_s=np.asarray([0.0, 1.0, 3.0]),
+        sphere_positions=np.asarray(
+            [[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]]
+        ),
+        sphere_radii=np.asarray([0.05]),
+    )
+    world = _world(_object(position=(3.0, 0.0, 0.0), velocity=(-1.0, 0.0, 0.0)))
+    guard = DynamicTrajectoryGuard(check_dt_s=0.01)
+
+    short_score = guard.validate(
+        extend_collision_plan_with_terminal_hold(short, 3.0),
+        world,
+        0.0,
+        3.0,
+        preferred_clearance_m=0.10,
+        cvar_fraction=0.10,
+        terminal_hold_start_unix_s=1.0,
+    )
+    long_score = guard.validate(
+        long,
+        world,
+        0.0,
+        3.0,
+        preferred_clearance_m=0.10,
+        cvar_fraction=0.10,
+        terminal_hold_start_unix_s=3.0,
+    )
+
+    assert short_score.minimum_clearance_m == pytest.approx(
+        long_score.minimum_clearance_m
+    )
+    assert short_score.clearance_mean_cost == pytest.approx(
+        long_score.clearance_mean_cost
+    )
+    assert short_score.clearance_cvar_cost == pytest.approx(
+        long_score.clearance_cvar_cost
+    )

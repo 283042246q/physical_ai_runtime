@@ -11,6 +11,8 @@ from .replan_node import MpdDynamicReplanNode
 class MpdSpaceTimeReplanNode(MpdDynamicReplanNode):
     """Reuse the Phase-4 handoff/guard loop with a strict Phase-5 backend."""
 
+    _default_clearance_score_mode = "mean_cvar"
+
     def __init__(self) -> None:
         # No planning callback can run before construction returns and spin starts,
         # so replacing the socket backend here leaves the Phase-4 node untouched.

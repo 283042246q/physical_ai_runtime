@@ -93,6 +93,9 @@ class TrajectoryRisk:
     minimum_clearance_m: float
     first_collision_unix_s: float | None
     checked_samples: int
+    clearance_mean_cost: float | None = None
+    clearance_cvar_cost: float | None = None
+    terminal_hold_minimum_clearance_m: float | None = None
 
 
 class DynamicTrajectoryGuard:
@@ -117,7 +120,15 @@ class DynamicTrajectoryGuard:
         world: DynamicWorldSnapshot,
         start_unix_s: float,
         end_unix_s: float,
+        *,
+        preferred_clearance_m: float | None = None,
+        cvar_fraction: float = 0.10,
+        terminal_hold_start_unix_s: float | None = None,
     ) -> TrajectoryRisk:
+        if preferred_clearance_m is not None and preferred_clearance_m <= 0.0:
+            raise ValueError("preferred_clearance_m must be positive")
+        if not 0.0 < cvar_fraction <= 1.0:
+            raise ValueError("cvar_fraction must lie in (0, 1]")
         start = max(float(start_unix_s), float(plan.absolute_times_s[0]))
         end = min(float(end_unix_s), float(plan.absolute_times_s[-1]))
         if end < start:
@@ -128,6 +139,7 @@ class DynamicTrajectoryGuard:
         times = np.linspace(start, end, count)
         spheres = plan.sample(times)
         minimum = math.inf
+        clearance_by_time = np.full(count, math.inf, dtype=np.float64)
         first_collision = None
         dt = times - world.stamp_unix_ns * 1e-9
         for item in world.objects:
@@ -136,17 +148,42 @@ class DynamicTrajectoryGuard:
             distances = _local_sdf(local, item)
             distances -= _inflation(item, dt, self.covariance_sigma, self.process_variance)[:, None]
             clearance = distances - plan.sphere_radii[None, :]
+            clearance_by_time = np.minimum(
+                clearance_by_time, clearance.min(axis=1)
+            )
             minimum = min(minimum, float(clearance.min()))
             collisions = np.any(clearance <= self.minimum_clearance_m, axis=1)
             if np.any(collisions):
                 collision_time = float(times[np.flatnonzero(collisions)[0]])
                 first_collision = collision_time if first_collision is None else min(first_collision, collision_time)
+        clearance_mean_cost = None
+        clearance_cvar_cost = None
+        terminal_hold_minimum_clearance_m = None
+        if preferred_clearance_m is not None:
+            soft_cost = np.maximum(
+                0.0,
+                (preferred_clearance_m - clearance_by_time)
+                / preferred_clearance_m,
+            ) ** 2
+            clearance_mean_cost = float(np.mean(soft_cost))
+            tail_count = max(1, int(math.ceil(cvar_fraction * count)))
+            clearance_cvar_cost = float(
+                np.mean(np.partition(soft_cost, count - tail_count)[-tail_count:])
+            )
+            if terminal_hold_start_unix_s is not None:
+                held = times > float(terminal_hold_start_unix_s) + 1e-9
+                terminal_hold_minimum_clearance_m = (
+                    float(clearance_by_time[held].min()) if np.any(held) else None
+                )
         return TrajectoryRisk(
             first_collision is None,
             world.version,
             minimum,
             first_collision,
             count,
+            clearance_mean_cost,
+            clearance_cvar_cost,
+            terminal_hold_minimum_clearance_m,
         )
 
 

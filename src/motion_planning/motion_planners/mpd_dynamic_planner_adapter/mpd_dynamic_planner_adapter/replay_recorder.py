@@ -42,6 +42,7 @@ class _RecordedPlan:
     handoff_s: float | None = None
     duration_s: float = 0.0
     phase_timing: dict[str, float] | None = None
+    candidate_clearance_diagnostics: list[dict[str, Any]] | None = None
 
 
 class DynamicReplayRecorder:
@@ -220,6 +221,14 @@ class DynamicReplayRecorder:
                         ),
                     }
                 ),
+                candidate_clearance_diagnostics=(
+                    None
+                    if "top_k_clearance_risk" not in result.diagnostics
+                    else [
+                        dict(item)
+                        for item in result.diagnostics["top_k_clearance_risk"]
+                    ]
+                ),
             )
             self._plans[plan_id] = plan
             self._generation_to_plan[int(generation)] = plan_id
@@ -352,6 +361,10 @@ class DynamicReplayRecorder:
                 )
             if plan.phase_timing is not None:
                 payload["phase_timing"] = plan.phase_timing
+            if plan.candidate_clearance_diagnostics is not None:
+                payload["candidate_clearance_diagnostics"] = (
+                    plan.candidate_clearance_diagnostics
+                )
             plans.append(payload)
         manifest = {
             "schema": "mpd_dynamic_replay",
