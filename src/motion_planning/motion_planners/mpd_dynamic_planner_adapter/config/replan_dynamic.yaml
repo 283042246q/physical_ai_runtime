@@ -41,6 +41,12 @@ mpd_dynamic_replanner:
     near_goal_replan_suppression_s: 2.0
     comparison_sample_dt_s: 0.02
     preferred_clearance_m: 0.10
+    # Phase 4 keeps its fixed 10 s trajectory/score horizon, but ranks safe
+    # alternatives with the same normalized mean/CVaR clearance statistic.
+    clearance_score_mode: mean_cvar
+    clearance_cvar_fraction: 0.10
+    clearance_mean_weight: 0.25
+    clearance_cvar_weight: 0.75
     cost_kinematic_weight: 1.0
     # Full suffix after comparison_horizon_s: path length, dq, ddq and jerk.
     cost_tail_kinematic_weight: 1.0
@@ -55,7 +61,7 @@ mpd_dynamic_replanner:
     enable_exhaustion_forced_switch: false
     replacement_retry_reserve_s: 3.0
     guard_rate_hz: 20.0
-    guard_lookahead_s: 3.0
+    guard_lookahead_s: 2.0
     guard_check_dt_s: 0.02
     guard_minimum_clearance_m: 0.0
     covariance_sigma: 3.0

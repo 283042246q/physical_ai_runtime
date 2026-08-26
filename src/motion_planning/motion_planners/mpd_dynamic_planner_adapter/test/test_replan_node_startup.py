@@ -15,7 +15,11 @@ def test_dynamic_replanner_starts_without_target_or_world():
         assert node._plan_only
         assert not node._goal_reached
         assert node._guard_lookahead_s == 2.0
-        assert node._clearance_score_mode == "minimum"
+        assert node._trajectory_duration_s == 10.0
+        assert node._clearance_score_mode == "mean_cvar"
+        assert node._clearance_cvar_fraction == 0.10
+        assert node._clearance_mean_weight == 0.25
+        assert node._clearance_cvar_weight == 0.75
         assert node._backend.client.socket_path.name == "mpd-dynamic-runtime.sock"
     finally:
         node.destroy_node()

@@ -183,7 +183,7 @@ def _prepend_execution_prefix(
 
 
 class MpdDynamicReplanNode(Node):
-    _default_clearance_score_mode = "minimum"
+    _default_clearance_score_mode = "mean_cvar"
 
     def __init__(self) -> None:
         super().__init__("mpd_dynamic_replanner")

@@ -9,6 +9,11 @@ def test_phase4_has_separate_launch_socket_and_node_names():
     config = (PACKAGE / "config" / "replan_dynamic.yaml").read_text()
     assert "mpd_dynamic_replanner" in launch
     assert "mpd-dynamic-runtime.sock" in config
+    assert "trajectory_duration_s: 10.0" in config
+    assert "clearance_score_mode: mean_cvar" in config
+    assert "clearance_cvar_fraction: 0.10" in config
+    assert "clearance_mean_weight: 0.25" in config
+    assert "clearance_cvar_weight: 0.75" in config
     assert "dynamic_replan_node" in launch
     assert "jtc_safe_stop" in launch
 
