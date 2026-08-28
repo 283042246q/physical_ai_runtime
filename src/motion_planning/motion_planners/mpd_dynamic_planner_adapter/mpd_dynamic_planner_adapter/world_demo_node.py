@@ -26,20 +26,27 @@ _POSITION_COVARIANCE_3X3 = [
 # Each xy direction is perpendicular to the measured local tangent of a
 # successful ToDrawer end-effector path at the corresponding crossing point.
 _TO_DRAWER_CROSSING_SPECS = (
-    (
-        "demo-box-crossing-1",
-        (0.18831415, 0.22503140, 0.65347225),
-        (0.61993897, 0.78465003),
-        9.0,
-        0.18,
-    ),
+    #(
+    #    "demo-box-crossing-1",
+    #    (-0.68831415, -1.22503140, 0.65347225),
+    #    (0.61993897, 0.78465003, 0.0),
+    #    13.5,
+    #    0.18,
+    #),
     (
         "demo-box-crossing-2",
-        (-0.02146948, 0.40876295, 0.46108561),
-        (0.99858189, -0.05323737),
-        12.5,
+        (-0.02146948, 0.30876295, 0.46108561),
+        (0.99858189, -0.05323737, 0.0),
+        8.5,
         0.18,
     ),
+    #(
+    #    "demo-box-crossing-3",
+    #    (-0.2, -0.16, 0.5),
+    #    (0.0, 0.0, 1.0),
+    #    14.5,
+    #    0.18,
+    #),
 )
 
 
@@ -85,15 +92,32 @@ def _scenario_objects(scenario: str, elapsed: float) -> list[dict]:
             )
         ]
     if scenario == "to_drawer_crossing":
+        if elapsed < 10.0:
+            position = [0.32 - 0.2 * elapsed, 0.40, 0.38]
+        else:
+            position = [
+                0.32 - 0.2 * 10.0 + 0.06 * (elapsed - 10.0),
+                0.40,
+                0.38,
+            ]
         return [
             _box_observation(
                 "demo-box",
-                [0.4 - 0.045 * elapsed, 0.40, 0.38],
+                position,
                 size_xyz=[0.16, 0.12, 0.18],
                 base_inflation_m=0.03,
                 horizon_inflation_rate_m_s=0.02,
             )
         ]
+        #return [
+        #    _box_observation(
+        #        "demo-box",
+        #        [0.4 - 0.045 * elapsed, 0.40, 0.38],
+        #        size_xyz=[0.16, 0.12, 0.18],
+        #        base_inflation_m=0.03,
+        #        horizon_inflation_rate_m_s=0.02,
+        #    )
+        #]
     if scenario == "to_drawer_bridge_crossing":
         # Previous single reversing obstacle retained for easy comparison:
         # if elapsed < 7.0:
@@ -110,7 +134,7 @@ def _scenario_objects(scenario: str, elapsed: float) -> list[dict]:
             position = [
                 anchor[0] + direction[0] * displacement,
                 anchor[1] + direction[1] * displacement,
-                anchor[2],
+                anchor[2] + direction[2] * displacement,
             ]
             objects.append(
                 _box_observation(
