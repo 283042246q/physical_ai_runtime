@@ -1,9 +1,12 @@
 import math
+import json
 
 import pytest
 
 from mpd_dynamic_planner_adapter.world_demo_node import (
     _TO_DRAWER_CROSSING_SPECS,
+    _scenario_file,
+    _scenario_file_objects,
     _scenario_objects,
 )
 
@@ -15,10 +18,9 @@ _LOCAL_PATH_TANGENTS_XY = (
 
 
 def test_to_drawer_obstacles_cross_successively_and_perpendicularly():
-    assert len(_TO_DRAWER_CROSSING_SPECS) == 2
-    assert _TO_DRAWER_CROSSING_SPECS[0][3] < _TO_DRAWER_CROSSING_SPECS[1][3]
+    assert len(_TO_DRAWER_CROSSING_SPECS) == 3
 
-    for spec, tangent in zip(_TO_DRAWER_CROSSING_SPECS, _LOCAL_PATH_TANGENTS_XY):
+    for spec, tangent in zip(_TO_DRAWER_CROSSING_SPECS[:2], _LOCAL_PATH_TANGENTS_XY):
         object_id, anchor, direction, crossing_time, speed = spec
         objects_at_crossing = _scenario_objects(
             "to_drawer_bridge_crossing", crossing_time
@@ -51,13 +53,26 @@ def test_to_drawer_obstacles_cross_successively_and_perpendicularly():
         ) / 0.2
         assert measured_speed == pytest.approx(speed)
 
+    object_id, anchor, direction, crossing_time, speed = _TO_DRAWER_CROSSING_SPECS[2]
+    obstacle = next(
+        item
+        for item in _scenario_objects("to_drawer_bridge_crossing", crossing_time)
+        if item["id"] == object_id
+    )
+    assert obstacle["position"] == pytest.approx(anchor)
+    assert direction == pytest.approx((0.0, 0.0, 1.0))
+    before = _scenario_objects("to_drawer_bridge_crossing", crossing_time - 0.1)[2]
+    after = _scenario_objects("to_drawer_bridge_crossing", crossing_time + 0.1)[2]
+    assert (after["position"][2] - before["position"][2]) / 0.2 == pytest.approx(speed)
 
-def test_to_drawer_crossing_publishes_two_distinct_known_objects():
+
+def test_to_drawer_crossing_publishes_three_distinct_known_objects():
     objects = _scenario_objects("to_drawer_bridge_crossing", 0.0)
 
     assert [item["id"] for item in objects] == [
         "demo-box-crossing-1",
         "demo-box-crossing-2",
+        "demo-box-crossing-3",
     ]
     assert all(item["local_sdf"]["type"] == "box" for item in objects)
     assert all(item["orientation_xyzw"] == [0.0, 0.0, 0.0, 1.0] for item in objects)
@@ -71,3 +86,81 @@ def test_existing_world_demo_scenarios_still_publish_one_object():
 def test_unknown_world_demo_scenario_is_rejected():
     with pytest.raises(ValueError, match="unknown scenario"):
         _scenario_objects("not-a-scenario", 0.0)
+
+
+def test_scenario_file_normalizes_direction_and_crosses_anchor(tmp_path):
+    path = tmp_path / "scenario.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "mpd_todrawer_dynamic_scenario",
+                "schema_version": 1,
+                "frame_id": "fr3_link0",
+                "objects": [
+                    {
+                        "id": "random-box-0",
+                        "local_sdf": {"type": "box", "size_xyz": [0.1, 0.12, 0.14]},
+                        "anchor_position": [-0.2, 0.4, 0.5],
+                        "direction": [2.0, 0.0, 0.0],
+                        "crossing_time_s": 12.0,
+                        "speed_m_s": 0.2,
+                        "orientation_xyzw": [0.0, 0.0, 0.0, 1.0],
+                        "position_covariance_3x3": [
+                            0.0001,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0001,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0001,
+                        ],
+                        "inflation": {
+                            "mode": "linear",
+                            "base_m": 0.02,
+                            "horizon_rate_m_s": 0.01,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _scenario_file(path)
+    before = _scenario_file_objects(payload, 11.0)[0]
+    crossing = _scenario_file_objects(payload, 12.0)[0]
+
+    assert crossing["position"] == pytest.approx([-0.2, 0.4, 0.5])
+    assert before["position"] == pytest.approx([-0.4, 0.4, 0.5])
+    assert crossing["base_inflation_m"] == pytest.approx(0.02)
+
+
+def test_scenario_file_rejects_duplicate_object_ids(tmp_path):
+    path = tmp_path / "scenario.json"
+    item = {
+        "id": "duplicate",
+        "local_sdf": {"type": "sphere", "radius": 0.1},
+        "anchor_position": [0.0, 0.0, 0.5],
+        "direction": [1.0, 0.0, 0.0],
+        "crossing_time_s": 10.0,
+        "speed_m_s": 0.1,
+        "orientation_xyzw": [0.0, 0.0, 0.0, 1.0],
+        "position_covariance_3x3": [0.0001, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0001],
+        "inflation": {"mode": "linear", "base_m": 0.02, "horizon_rate_m_s": 0.01},
+    }
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "mpd_todrawer_dynamic_scenario",
+                "schema_version": 1,
+                "frame_id": "fr3_link0",
+                "objects": [item, item],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unique"):
+        _scenario_file(path)

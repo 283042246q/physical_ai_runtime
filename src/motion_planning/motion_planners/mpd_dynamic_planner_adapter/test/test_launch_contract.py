@@ -24,6 +24,8 @@ def test_fake_launch_uses_franka_server_fake_hardware_and_jtc():
     assert '"use_fake_hardware": "true"' in launch
     assert '"activate_trajectory_controller": "true"' in launch
     assert "dynamic_world_demo" in launch
+    assert "world_scenario_file" in launch
+    assert "planner_seed" in launch
 
 
 def test_phase5_has_separate_entry_config_socket_and_mode():
@@ -43,3 +45,5 @@ def test_phase5_fake_launch_keeps_franka_fake_hardware_path():
     assert '"activate_trajectory_controller": "true"' in launch
     assert "replan_space_time.launch.py" in launch
     assert "dynamic_world_demo" in launch
+    assert "world_scenario_file" in launch
+    assert "planner_seed" in launch

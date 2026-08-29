@@ -38,6 +38,7 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "plan_only": LaunchConfiguration("plan_only"),
             "plan_rate_hz": LaunchConfiguration("plan_rate_hz"),
+            "seed": LaunchConfiguration("planner_seed"),
             "enforce_measured_start_drift": "false",
             "target_pose_xyzw": LaunchConfiguration("target_pose_xyzw"),
             "scene_id": LaunchConfiguration("scene_id"),
@@ -54,14 +55,21 @@ def generate_launch_description() -> LaunchDescription:
         executable="dynamic_world_demo",
         name="mpd_dynamic_world_demo",
         output="screen",
-        parameters=[{"scenario": LaunchConfiguration("world_scenario")}],
+        parameters=[
+            {
+                "scenario": LaunchConfiguration("world_scenario"),
+                "scenario_file": LaunchConfiguration("world_scenario_file"),
+            }
+        ],
     )
     return LaunchDescription(
         [
             DeclareLaunchArgument("robot_ip", default_value="192.168.2.101"),
             DeclareLaunchArgument("plan_only", default_value="true"),
             DeclareLaunchArgument("plan_rate_hz", default_value="0.5"),
+            DeclareLaunchArgument("planner_seed", default_value="123"),
             DeclareLaunchArgument("world_scenario", default_value="safe_far"),
+            DeclareLaunchArgument("world_scenario_file", default_value=""),
             DeclareLaunchArgument("scene_id", default_value="EnvWarehouseExtraObjectsV00"),
             DeclareLaunchArgument("socket_path", default_value="/tmp/mpd-dynamic-runtime.sock"),
             DeclareLaunchArgument("replay_record_dir", default_value=""),

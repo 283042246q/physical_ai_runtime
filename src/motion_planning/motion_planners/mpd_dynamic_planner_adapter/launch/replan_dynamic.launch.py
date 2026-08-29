@@ -16,6 +16,7 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("config", default_value=default_config),
         DeclareLaunchArgument("plan_only", default_value="true"),
         DeclareLaunchArgument("plan_rate_hz", default_value="1.0"),
+        DeclareLaunchArgument("seed", default_value="123"),
         DeclareLaunchArgument("enforce_measured_start_drift", default_value="true"),
         DeclareLaunchArgument("target_pose_xyzw", default_value=""),
         DeclareLaunchArgument("scene_id", default_value="EnvWarehouseExtraObjectsV00"),
@@ -41,6 +42,7 @@ def generate_launch_description() -> LaunchDescription:
             {
                 "plan_only": LaunchConfiguration("plan_only"),
                 "plan_rate_hz": LaunchConfiguration("plan_rate_hz"),
+                "seed": ParameterValue(LaunchConfiguration("seed"), value_type=int),
                 "enforce_measured_start_drift": LaunchConfiguration(
                     "enforce_measured_start_drift"
                 ),
