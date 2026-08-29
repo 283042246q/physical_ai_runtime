@@ -20,6 +20,10 @@ def test_dynamic_replanner_starts_without_target_or_world():
         assert node._clearance_cvar_fraction == 0.10
         assert node._clearance_mean_weight == 0.25
         assert node._clearance_cvar_weight == 0.75
+        assert not node._split_terminal_hold_clearance
+        assert node._cost_weights["tail_kinematic"] == 1.0
+        assert node._cost_weights["deviation"] == 0.0
+        assert node._relative_switching_hysteresis == 0.0
         assert node._backend.client.socket_path.name == "mpd-dynamic-runtime.sock"
     finally:
         node.destroy_node()
@@ -34,6 +38,13 @@ def test_phase5_defaults_to_common_window_mean_cvar_clearance():
         assert node._clearance_cvar_fraction == 0.10
         assert node._clearance_mean_weight == 0.25
         assert node._clearance_cvar_weight == 0.75
+        assert node._split_terminal_hold_clearance
+        assert node._cost_weights["kinematic"] == 1.0
+        assert node._cost_weights["tail_kinematic"] == 4.0
+        assert node._cost_weights["motion_clearance"] == 4.0
+        assert node._cost_weights["terminal_hold_clearance"] == 0.2
+        assert node._cost_weights["deviation"] == 1.0
+        assert node._relative_switching_hysteresis == 0.10
     finally:
         node.destroy_node()
         rclpy.shutdown()

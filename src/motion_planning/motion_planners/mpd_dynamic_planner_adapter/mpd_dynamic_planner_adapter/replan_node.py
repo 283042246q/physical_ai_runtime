@@ -45,6 +45,7 @@ from .candidate_selector import (
     CandidateCost,
     choose_hysteretic_switch,
     clearance_cost,
+    common_window_deviation_cost,
     common_window_kinematic_cost,
 )
 from .quintic_bridge import (
@@ -70,6 +71,14 @@ def _finite_diagnostic(value):
         return None
     output = float(value)
     return output if math.isfinite(output) else None
+
+
+def _mean_cvar_score(mean_cost, cvar_cost, mean_weight, cvar_weight) -> float:
+    if mean_cost is None or cvar_cost is None:
+        return 0.0
+    return float(mean_weight) * float(mean_cost) + float(cvar_weight) * float(
+        cvar_cost
+    )
 
 
 @dataclass(frozen=True)
@@ -184,6 +193,10 @@ def _prepend_execution_prefix(
 
 class MpdDynamicReplanNode(Node):
     _default_clearance_score_mode = "mean_cvar"
+    _split_terminal_hold_clearance = False
+    _default_cost_tail_kinematic_weight = 1.0
+    _default_cost_deviation_weight = 0.0
+    _default_relative_switching_hysteresis = 0.0
 
     def __init__(self) -> None:
         super().__init__("mpd_dynamic_replanner")
@@ -230,12 +243,16 @@ class MpdDynamicReplanNode(Node):
             "clearance_mean_weight": 0.25,
             "clearance_cvar_weight": 0.75,
             "cost_kinematic_weight": 1.0,
-            "cost_tail_kinematic_weight": 1.0,
+            "cost_tail_kinematic_weight": self._default_cost_tail_kinematic_weight,
             "cost_clearance_weight": 4.0,
+            "cost_motion_clearance_weight": 4.0,
+            "cost_terminal_hold_clearance_weight": 0.2,
+            "cost_deviation_weight": self._default_cost_deviation_weight,
             "cost_mpd_weight": 0.10,
             "cost_bridge_weight": 0.10,
             "cost_switch_penalty": 0.02,
             "switching_hysteresis": 0.02,
+            "relative_switching_hysteresis": self._default_relative_switching_hysteresis,
             "minimum_commit_interval_s": 1.0,
             "replacement_retry_reserve_s": 3.0,
             "enable_exhaustion_forced_switch": False,
@@ -305,11 +322,19 @@ class MpdDynamicReplanNode(Node):
             "kinematic": float(value("cost_kinematic_weight")),
             "tail_kinematic": float(value("cost_tail_kinematic_weight")),
             "clearance": float(value("cost_clearance_weight")),
+            "motion_clearance": float(value("cost_motion_clearance_weight")),
+            "terminal_hold_clearance": float(
+                value("cost_terminal_hold_clearance_weight")
+            ),
+            "deviation": float(value("cost_deviation_weight")),
             "mpd": float(value("cost_mpd_weight")),
             "bridge": float(value("cost_bridge_weight")),
             "switch": float(value("cost_switch_penalty")),
         }
         self._switching_hysteresis = float(value("switching_hysteresis"))
+        self._relative_switching_hysteresis = float(
+            value("relative_switching_hysteresis")
+        )
         self._minimum_commit_interval_s = float(value("minimum_commit_interval_s"))
         self._replacement_retry_reserve_s = float(value("replacement_retry_reserve_s"))
         self._enable_exhaustion_forced_switch = bool(
@@ -325,6 +350,7 @@ class MpdDynamicReplanNode(Node):
             or self._minimum_commit_interval_s < 0.0
             or self._replacement_retry_reserve_s < 0.0
             or self._switching_hysteresis < 0.0
+            or self._relative_switching_hysteresis < 0.0
             or self._bridge_max_active_deviation_rad <= 0.0
         ):
             raise ValueError("dynamic handoff comparison parameters are invalid")
@@ -884,9 +910,17 @@ class MpdDynamicReplanNode(Node):
                 "clearance_mean_cost": None,
                 "clearance_cvar_cost": None,
                 "terminal_hold_minimum_clearance_m": None,
+                "motion_clearance_mean_cost": None,
+                "motion_clearance_cvar_cost": None,
+                "terminal_hold_clearance_mean_cost": None,
+                "terminal_hold_clearance_cvar_cost": None,
+                "motion_clearance_score": None,
+                "terminal_hold_clearance_score": None,
                 "kinematic_cost": None,
                 "tail_kinematic_cost": None,
+                "deviation_cost": None,
                 "clearance_score": None,
+                "clearance_contribution": None,
                 "mpd_normalized_cost": None,
                 "bridge_cost": None,
                 "switch_penalty_contribution": None,
@@ -1004,6 +1038,18 @@ class MpdDynamicReplanNode(Node):
                         terminal_hold_minimum_clearance_m=_finite_diagnostic(
                             score_risk.terminal_hold_minimum_clearance_m
                         ),
+                        motion_clearance_mean_cost=_finite_diagnostic(
+                            score_risk.motion_clearance_mean_cost
+                        ),
+                        motion_clearance_cvar_cost=_finite_diagnostic(
+                            score_risk.motion_clearance_cvar_cost
+                        ),
+                        terminal_hold_clearance_mean_cost=_finite_diagnostic(
+                            score_risk.terminal_hold_clearance_mean_cost
+                        ),
+                        terminal_hold_clearance_cvar_cost=_finite_diagnostic(
+                            score_risk.terminal_hold_clearance_cvar_cost
+                        ),
                     )
                     candidate.diagnostics["clearance_risk"] = dict(
                         clearance_diagnostics
@@ -1098,7 +1144,24 @@ class MpdDynamicReplanNode(Node):
                         sample_dt_s=self._comparison_sample_dt_s,
                         hold_after_end=True,
                     )
-                    if not math.isfinite(kinematic) or not math.isfinite(tail_kinematic):
+                    deviation = (
+                        0.0
+                        if self._active_plan is None
+                        else common_window_deviation_cost(
+                            merged,
+                            self._active_plan.result,
+                            new_trajectory_start_unix_s=bridge_start,
+                            old_trajectory_start_unix_s=self._active_plan.start_unix_s,
+                            window_start_unix_s=handoff,
+                            window_end_unix_s=comparison_end,
+                            sample_dt_s=self._comparison_sample_dt_s,
+                            hold_after_end=True,
+                        )
+                    )
+                    if not all(
+                        math.isfinite(value)
+                        for value in (kinematic, tail_kinematic, deviation)
+                    ):
                         self._record_candidate_rejection(
                             index,
                             "kinematic_cost_non_finite",
@@ -1107,16 +1170,45 @@ class MpdDynamicReplanNode(Node):
                         )
                         continue
                     if self._clearance_score_mode == "mean_cvar":
-                        clearance = (
-                            self._clearance_mean_weight
-                            * float(score_risk.clearance_mean_cost)
-                            + self._clearance_cvar_weight
-                            * float(score_risk.clearance_cvar_cost)
+                        motion_clearance = _mean_cvar_score(
+                            score_risk.motion_clearance_mean_cost,
+                            score_risk.motion_clearance_cvar_cost,
+                            self._clearance_mean_weight,
+                            self._clearance_cvar_weight,
                         )
+                        terminal_hold_clearance = _mean_cvar_score(
+                            score_risk.terminal_hold_clearance_mean_cost,
+                            score_risk.terminal_hold_clearance_cvar_cost,
+                            self._clearance_mean_weight,
+                            self._clearance_cvar_weight,
+                        )
+                        if self._split_terminal_hold_clearance:
+                            clearance = (
+                                self._cost_weights["motion_clearance"]
+                                * motion_clearance
+                                + self._cost_weights["terminal_hold_clearance"]
+                                * terminal_hold_clearance
+                            )
+                            clearance_contribution = clearance
+                        else:
+                            clearance = _mean_cvar_score(
+                                score_risk.clearance_mean_cost,
+                                score_risk.clearance_cvar_cost,
+                                self._clearance_mean_weight,
+                                self._clearance_cvar_weight,
+                            )
+                            clearance_contribution = (
+                                self._cost_weights["clearance"] * clearance
+                            )
                     else:
+                        motion_clearance = None
+                        terminal_hold_clearance = None
                         clearance = clearance_cost(
                             hard_risk.minimum_clearance_m,
                             self._preferred_clearance_m,
+                        )
+                        clearance_contribution = (
+                            self._cost_weights["clearance"] * clearance
                         )
                     bridge_stats = merged.diagnostics["bridge"]
                     bridge_cost = (
@@ -1129,7 +1221,8 @@ class MpdDynamicReplanNode(Node):
                     total = (
                         self._cost_weights["kinematic"] * kinematic
                         + self._cost_weights["tail_kinematic"] * tail_kinematic
-                        + self._cost_weights["clearance"] * clearance
+                        + clearance_contribution
+                        + self._cost_weights["deviation"] * deviation
                         + self._cost_weights["mpd"] * float(normalized_scores[index])
                         + self._cost_weights["bridge"] * bridge_cost
                         + (self._cost_weights["switch"] if self._active_plan is not None else 0.0)
@@ -1145,7 +1238,13 @@ class MpdDynamicReplanNode(Node):
                     clearance_diagnostics.update(
                         kinematic_cost=float(kinematic),
                         tail_kinematic_cost=float(tail_kinematic),
+                        deviation_cost=float(deviation),
+                        motion_clearance_score=_finite_diagnostic(motion_clearance),
+                        terminal_hold_clearance_score=_finite_diagnostic(
+                            terminal_hold_clearance
+                        ),
                         clearance_score=float(clearance),
+                        clearance_contribution=float(clearance_contribution),
                         mpd_normalized_cost=float(normalized_scores[index]),
                         bridge_cost=float(bridge_cost),
                         switch_penalty_contribution=(
@@ -1167,6 +1266,7 @@ class MpdDynamicReplanNode(Node):
                             float(normalized_scores[index]),
                             bridge_cost,
                             tail_kinematic,
+                            deviation,
                         )
                     )
                     merged.diagnostics.update(
@@ -1175,7 +1275,9 @@ class MpdDynamicReplanNode(Node):
                             "total": total,
                             "kinematic": kinematic,
                             "tail_kinematic": tail_kinematic,
+                            "deviation": deviation,
                             "clearance": clearance,
+                            "clearance_contribution": clearance_contribution,
                             "mpd": float(normalized_scores[index]),
                             "bridge": bridge_cost,
                         },
@@ -1263,23 +1365,48 @@ class MpdDynamicReplanNode(Node):
                     )
                     if old_safe:
                         if self._clearance_score_mode == "mean_cvar":
-                            old_clearance = (
-                                self._clearance_mean_weight
-                                * float(old_score_risk.clearance_mean_cost)
-                                + self._clearance_cvar_weight
-                                * float(old_score_risk.clearance_cvar_cost)
+                            old_motion_clearance = _mean_cvar_score(
+                                old_score_risk.motion_clearance_mean_cost,
+                                old_score_risk.motion_clearance_cvar_cost,
+                                self._clearance_mean_weight,
+                                self._clearance_cvar_weight,
                             )
+                            old_terminal_hold_clearance = _mean_cvar_score(
+                                old_score_risk.terminal_hold_clearance_mean_cost,
+                                old_score_risk.terminal_hold_clearance_cvar_cost,
+                                self._clearance_mean_weight,
+                                self._clearance_cvar_weight,
+                            )
+                            if self._split_terminal_hold_clearance:
+                                old_clearance_contribution = (
+                                    self._cost_weights["motion_clearance"]
+                                    * old_motion_clearance
+                                    + self._cost_weights["terminal_hold_clearance"]
+                                    * old_terminal_hold_clearance
+                                )
+                            else:
+                                old_clearance = _mean_cvar_score(
+                                    old_score_risk.clearance_mean_cost,
+                                    old_score_risk.clearance_cvar_cost,
+                                    self._clearance_mean_weight,
+                                    self._clearance_cvar_weight,
+                                )
+                                old_clearance_contribution = (
+                                    self._cost_weights["clearance"] * old_clearance
+                                )
                         else:
                             old_clearance = clearance_cost(
                                 old_score_risk.minimum_clearance_m,
                                 self._preferred_clearance_m,
                             )
+                            old_clearance_contribution = (
+                                self._cost_weights["clearance"] * old_clearance
+                            )
                         old_cost = (
                             self._cost_weights["kinematic"] * old_kinematic
                             + self._cost_weights["tail_kinematic"]
                             * old_tail_kinematic
-                            + self._cost_weights["clearance"]
-                            * old_clearance
+                            + old_clearance_contribution
                         )
                 except ValueError:
                     old_safe = False
@@ -1308,6 +1435,7 @@ class MpdDynamicReplanNode(Node):
                     >= self._minimum_commit_interval_s
                 ),
                 switching_hysteresis=self._switching_hysteresis,
+                relative_hysteresis=self._relative_switching_hysteresis,
                 forced_switch_reason=forced_switch_reason,
             )
             current_world = self._world_manager.snapshot

@@ -19,6 +19,7 @@ class CandidateCost:
     mpd: float
     bridge: float
     tail_kinematic: float = 0.0
+    deviation: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,52 @@ def common_window_kinematic_cost(
     return path_term + velocity_term + acceleration_term + jerk_term
 
 
+def common_window_deviation_cost(
+    new_result: TrajectoryPlanResult,
+    old_result: TrajectoryPlanResult,
+    *,
+    new_trajectory_start_unix_s: float,
+    old_trajectory_start_unix_s: float,
+    window_start_unix_s: float,
+    window_end_unix_s: float,
+    sample_dt_s: float = 0.02,
+    hold_after_end: bool = True,
+) -> float:
+    """Mean time-aligned squared joint deviation between two alternatives."""
+
+    if not window_end_unix_s > window_start_unix_s or sample_dt_s <= 0.0:
+        raise ValueError("comparison window is invalid")
+    new_times, new_positions, _, _ = _arrays(new_result)
+    old_times, old_positions, _, _ = _arrays(old_result)
+    if new_positions.shape[1] != old_positions.shape[1]:
+        raise ValueError("trajectory joint dimensions do not match")
+    count = max(
+        2,
+        int(math.ceil((window_end_unix_s - window_start_unix_s) / sample_dt_s))
+        + 1,
+    )
+    absolute_times = np.linspace(window_start_unix_s, window_end_unix_s, count)
+
+    def sample(times, positions, trajectory_start):
+        relative = absolute_times - trajectory_start
+        if relative[0] < times[0] - 1e-9 or (
+            relative[-1] > times[-1] + 1e-9 and not hold_after_end
+        ):
+            return None
+        return np.column_stack(
+            [
+                np.interp(relative, times, positions[:, joint])
+                for joint in range(positions.shape[1])
+            ]
+        )
+
+    new_q = sample(new_times, new_positions, new_trajectory_start_unix_s)
+    old_q = sample(old_times, old_positions, old_trajectory_start_unix_s)
+    if new_q is None or old_q is None:
+        return math.inf
+    return float(np.mean(np.sum(np.square(new_q - old_q), axis=1)))
+
+
 def clearance_cost(minimum_clearance_m: float, preferred_clearance_m: float) -> float:
     if minimum_clearance_m <= 0.0:
         return math.inf
@@ -123,6 +170,7 @@ def choose_hysteretic_switch(
     old_safe: bool,
     minimum_commit_interval_elapsed: bool,
     switching_hysteresis: float,
+    relative_hysteresis: float = 0.0,
     forced_switch_reason: str | None = None,
 ) -> SwitchDecision:
     finite = [candidate for candidate in candidates if math.isfinite(candidate.total)]
@@ -142,6 +190,14 @@ def choose_hysteretic_switch(
             best.total,
             improvement,
         )
-    if improvement < switching_hysteresis:
+    required_improvement = max(
+        switching_hysteresis,
+        relative_hysteresis * abs(old_cost),
+    )
+    # Preserve Phase 4's equality behavior when relative hysteresis is disabled.
+    hysteresis_rejects = improvement < required_improvement or (
+        relative_hysteresis > 0.0 and improvement <= required_improvement
+    )
+    if hysteresis_rejects:
         return SwitchDecision(None, "switching_hysteresis", old_cost, best.total, improvement)
     return SwitchDecision(best.index, "composite_cost_improved", old_cost, best.total, improvement)

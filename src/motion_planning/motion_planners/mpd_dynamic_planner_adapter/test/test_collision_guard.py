@@ -148,6 +148,13 @@ def test_common_window_clearance_statistics_include_terminal_hold():
     assert score_risk.minimum_clearance_m < hard_risk.minimum_clearance_m
     assert score_risk.clearance_mean_cost > 0.0
     assert score_risk.clearance_cvar_cost >= score_risk.clearance_mean_cost
+    assert score_risk.motion_clearance_mean_cost == pytest.approx(0.0)
+    assert score_risk.motion_clearance_cvar_cost == pytest.approx(0.0)
+    assert score_risk.terminal_hold_clearance_mean_cost > 0.0
+    assert (
+        score_risk.terminal_hold_clearance_cvar_cost
+        >= score_risk.terminal_hold_clearance_mean_cost
+    )
     assert score_risk.terminal_hold_minimum_clearance_m == pytest.approx(
         score_risk.minimum_clearance_m
     )

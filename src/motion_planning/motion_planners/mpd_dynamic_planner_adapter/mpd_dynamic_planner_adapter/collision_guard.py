@@ -96,6 +96,10 @@ class TrajectoryRisk:
     clearance_mean_cost: float | None = None
     clearance_cvar_cost: float | None = None
     terminal_hold_minimum_clearance_m: float | None = None
+    motion_clearance_mean_cost: float | None = None
+    motion_clearance_cvar_cost: float | None = None
+    terminal_hold_clearance_mean_cost: float | None = None
+    terminal_hold_clearance_cvar_cost: float | None = None
 
 
 class DynamicTrajectoryGuard:
@@ -159,22 +163,42 @@ class DynamicTrajectoryGuard:
         clearance_mean_cost = None
         clearance_cvar_cost = None
         terminal_hold_minimum_clearance_m = None
+        motion_clearance_mean_cost = None
+        motion_clearance_cvar_cost = None
+        terminal_hold_clearance_mean_cost = None
+        terminal_hold_clearance_cvar_cost = None
         if preferred_clearance_m is not None:
             soft_cost = np.maximum(
                 0.0,
                 (preferred_clearance_m - clearance_by_time)
                 / preferred_clearance_m,
             ) ** 2
-            clearance_mean_cost = float(np.mean(soft_cost))
-            tail_count = max(1, int(math.ceil(cvar_fraction * count)))
-            clearance_cvar_cost = float(
-                np.mean(np.partition(soft_cost, count - tail_count)[-tail_count:])
-            )
+            def mean_cvar(values):
+                if not len(values):
+                    return None, None
+                tail_count = max(1, int(math.ceil(cvar_fraction * len(values))))
+                return (
+                    float(np.mean(values)),
+                    float(
+                        np.mean(
+                            np.partition(values, len(values) - tail_count)[-tail_count:]
+                        )
+                    ),
+                )
+
+            clearance_mean_cost, clearance_cvar_cost = mean_cvar(soft_cost)
             if terminal_hold_start_unix_s is not None:
                 held = times > float(terminal_hold_start_unix_s) + 1e-9
                 terminal_hold_minimum_clearance_m = (
                     float(clearance_by_time[held].min()) if np.any(held) else None
                 )
+                motion_clearance_mean_cost, motion_clearance_cvar_cost = mean_cvar(
+                    soft_cost[~held]
+                )
+                (
+                    terminal_hold_clearance_mean_cost,
+                    terminal_hold_clearance_cvar_cost,
+                ) = mean_cvar(soft_cost[held])
         return TrajectoryRisk(
             first_collision is None,
             world.version,
@@ -184,6 +208,10 @@ class DynamicTrajectoryGuard:
             clearance_mean_cost,
             clearance_cvar_cost,
             terminal_hold_minimum_clearance_m,
+            motion_clearance_mean_cost,
+            motion_clearance_cvar_cost,
+            terminal_hold_clearance_mean_cost,
+            terminal_hold_clearance_cvar_cost,
         )
 
 

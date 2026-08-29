@@ -49,12 +49,17 @@ mpd_space_time_replanner:
     clearance_mean_weight: 0.25
     clearance_cvar_weight: 0.75
     cost_kinematic_weight: 1.0
-    cost_tail_kinematic_weight: 1.0
-    cost_clearance_weight: 4.0
+    # First 2 s versus remaining 12 s kinematic score: 1:4.
+    cost_tail_kinematic_weight: 4.0
+    # Phase 5 separates the moving trajectory from its terminal hold.
+    cost_motion_clearance_weight: 4.0
+    cost_terminal_hold_clearance_weight: 0.2
+    cost_deviation_weight: 1.0
     cost_mpd_weight: 0.10
     cost_bridge_weight: 0.10
     cost_switch_penalty: 0.02
     switching_hysteresis: 0.02
+    relative_switching_hysteresis: 0.10
     minimum_commit_interval_s: 1.0
     enable_exhaustion_forced_switch: false
     replacement_retry_reserve_s: 3.0
