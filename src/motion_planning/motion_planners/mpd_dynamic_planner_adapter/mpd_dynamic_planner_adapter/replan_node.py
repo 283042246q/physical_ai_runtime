@@ -242,6 +242,7 @@ class MpdDynamicReplanNode(Node):
             "clearance_cvar_fraction": 0.10,
             "clearance_mean_weight": 0.25,
             "clearance_cvar_weight": 0.75,
+            "split_terminal_hold_clearance": self._split_terminal_hold_clearance,
             "cost_kinematic_weight": 1.0,
             "cost_tail_kinematic_weight": self._default_cost_tail_kinematic_weight,
             "cost_clearance_weight": 4.0,
@@ -253,6 +254,7 @@ class MpdDynamicReplanNode(Node):
             "cost_switch_penalty": 0.02,
             "switching_hysteresis": 0.02,
             "relative_switching_hysteresis": self._default_relative_switching_hysteresis,
+            "expected_phase4_aligned": False,
             "minimum_commit_interval_s": 1.0,
             "replacement_retry_reserve_s": 3.0,
             "enable_exhaustion_forced_switch": False,
@@ -318,6 +320,9 @@ class MpdDynamicReplanNode(Node):
         self._clearance_cvar_fraction = float(value("clearance_cvar_fraction"))
         self._clearance_mean_weight = float(value("clearance_mean_weight"))
         self._clearance_cvar_weight = float(value("clearance_cvar_weight"))
+        self._split_terminal_hold_clearance = bool(
+            value("split_terminal_hold_clearance")
+        )
         self._cost_weights = {
             "kinematic": float(value("cost_kinematic_weight")),
             "tail_kinematic": float(value("cost_tail_kinematic_weight")),
@@ -389,6 +394,7 @@ class MpdDynamicReplanNode(Node):
             scene_id=str(value("scene_id")),
             seed=int(value("seed")),
             timeout_s=float(value("worker_timeout_s")),
+            expected_aligned=bool(value("expected_phase4_aligned")),
         )
         self._backend_ready = False
         self._planner = LatestOnlyPlanner(self._plan_job)

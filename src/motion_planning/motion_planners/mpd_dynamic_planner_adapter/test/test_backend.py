@@ -1,8 +1,10 @@
 import time
 
 import numpy as np
+import pytest
 
 from manipulation_motion_planning.contracts import JointTarget, StartState
+from mpd_planner_adapter.client import MpdClientError
 
 from mpd_dynamic_planner_adapter.backend import (
     DynamicMpdGlobalTrajectoryBackend,
@@ -58,6 +60,13 @@ class SpaceTimeFakeClient(FakeClient):
             "trajectory_schema_version": 3,
             "candidate_specific_time": True,
         }
+        return response
+
+
+class AlignedFakeClient(FakeClient):
+    def health(self):
+        response = super().health()
+        response["engine"]["phase4_aligned"] = {"enabled": True}
         return response
 
 
@@ -123,6 +132,24 @@ def test_dynamic_backend_rejects_unuploaded_world_version():
     )
     assert not result.valid
     assert "not uploaded" in result.reason
+
+
+def test_phase4_aligned_backend_requires_matching_worker_mode():
+    aligned = DynamicMpdGlobalTrajectoryBackend(
+        "/tmp/not-used.sock",
+        expected_aligned=True,
+    )
+    aligned.client = FakeClient("/tmp/not-used.npz")
+    with pytest.raises(MpdClientError, match="aligned mode mismatch"):
+        aligned.warmup()
+
+    legacy = DynamicMpdGlobalTrajectoryBackend("/tmp/not-used.sock")
+    legacy.client = AlignedFakeClient("/tmp/not-used.npz")
+    with pytest.raises(MpdClientError, match="aligned mode mismatch"):
+        legacy.warmup()
+
+    aligned.client = AlignedFakeClient("/tmp/not-used.npz")
+    aligned.warmup()
 
 
 def test_dynamic_backend_reads_deduplicated_schema_v2_float32_spheres(tmp_path):

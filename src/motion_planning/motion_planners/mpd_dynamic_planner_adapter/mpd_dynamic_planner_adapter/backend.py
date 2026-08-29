@@ -57,13 +57,14 @@ class DynamicMpdWorkerClient(MpdWorkerClient):
 
 
 class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, expected_aligned: bool = False, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.client = DynamicMpdWorkerClient(
             self.client.socket_path,
             timeout_s=self.client.timeout_s,
         )
         self.uploaded_world_version = 0
+        self.expected_aligned = bool(expected_aligned)
 
     def warmup(self) -> None:
         health = self.client.health()
@@ -76,6 +77,14 @@ class DynamicMpdGlobalTrajectoryBackend(MpdGlobalTrajectoryBackend):
             and dense.get("pruning_used") is False
         ):
             raise MpdClientError("dynamic worker did not report full unpruned DenseCheck")
+        actual_aligned = bool(
+            health.get("engine", {}).get("phase4_aligned", {}).get("enabled", False)
+        )
+        if actual_aligned != self.expected_aligned:
+            raise MpdClientError(
+                "dynamic worker aligned mode mismatch: "
+                f"expected={self.expected_aligned}, actual={actual_aligned}"
+            )
 
     def update_world_snapshot(self, snapshot: DynamicWorldSnapshot) -> None:
         response = self.client.update_world(snapshot)

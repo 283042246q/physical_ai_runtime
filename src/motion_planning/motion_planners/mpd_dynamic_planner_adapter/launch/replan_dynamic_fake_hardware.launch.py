@@ -36,6 +36,7 @@ def generate_launch_description() -> LaunchDescription:
             )
         ),
         launch_arguments={
+            "config": LaunchConfiguration("config"),
             "plan_only": LaunchConfiguration("plan_only"),
             "plan_rate_hz": LaunchConfiguration("plan_rate_hz"),
             "seed": LaunchConfiguration("planner_seed"),
@@ -64,6 +65,16 @@ def generate_launch_description() -> LaunchDescription:
     )
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "config",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("mpd_dynamic_planner_adapter"),
+                        "config",
+                        "replan_dynamic.yaml",
+                    ]
+                ),
+            ),
             DeclareLaunchArgument("robot_ip", default_value="192.168.2.101"),
             DeclareLaunchArgument("plan_only", default_value="true"),
             DeclareLaunchArgument("plan_rate_hz", default_value="0.5"),
