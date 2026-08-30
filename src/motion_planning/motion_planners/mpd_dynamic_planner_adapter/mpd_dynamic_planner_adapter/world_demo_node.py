@@ -51,6 +51,14 @@ _TO_DRAWER_CROSSING_SPECS = (
     ),
 )
 
+_SCENARIO_MOTION_TYPES = {
+    "constant_velocity",
+    "constant_acceleration",
+    "sinusoidal_curve",
+    "smooth_speed_variation",
+    "curved_speed_variation",
+}
+
 
 def _box_observation(
     object_id: str,
@@ -158,8 +166,8 @@ def _scenario_file(path: str | Path) -> dict:
         raise ValueError("dynamic scenario file must contain a JSON object")
     if payload.get("schema") != "mpd_todrawer_dynamic_scenario":
         raise ValueError("dynamic scenario file has an unsupported schema")
-    if payload.get("schema_version") != 1:
-        raise ValueError("dynamic scenario schema_version must be 1")
+    if payload.get("schema_version") not in {1, 2}:
+        raise ValueError("dynamic scenario schema_version must be 1 or 2")
     if payload.get("frame_id") != "fr3_link0":
         raise ValueError("dynamic scenario frame_id must be 'fr3_link0'")
     objects = payload.get("objects")
@@ -176,14 +184,23 @@ def _scenario_file(path: str | Path) -> dict:
             raise ValueError("dynamic scenario object ids must be unique non-empty strings")
         seen.add(object_id)
 
-        def vector(name: str, size: int) -> list[float]:
-            value = item.get(name)
+        def vector(
+            name: str,
+            size: int,
+            *,
+            source: dict = item,
+            namespace: str = object_id,
+        ) -> list[float]:
+            value = source.get(name)
             if (
                 not isinstance(value, list)
                 or len(value) != size
                 or any(isinstance(entry, bool) or not math.isfinite(float(entry)) for entry in value)
             ):
-                raise ValueError(f"dynamic scenario {object_id}.{name} must have {size} finite values")
+                raise ValueError(
+                    f"dynamic scenario {namespace}.{name} must have "
+                    f"{size} finite values"
+                )
             return [float(entry) for entry in value]
 
         anchor = vector("anchor_position", 3)
@@ -217,6 +234,93 @@ def _scenario_file(path: str | Path) -> dict:
         rate = float(inflation.get("horizon_rate_m_s", math.nan))
         if not all(math.isfinite(value) and value >= 0.0 for value in (base, rate)):
             raise ValueError(f"dynamic scenario {object_id}.inflation values are invalid")
+        motion_value = item.get("motion", {"type": "constant_velocity"})
+        if not isinstance(motion_value, dict):
+            raise ValueError(f"dynamic scenario {object_id}.motion must be an object")
+        motion_type = str(motion_value.get("type", "constant_velocity"))
+        if motion_type not in _SCENARIO_MOTION_TYPES:
+            raise ValueError(
+                f"dynamic scenario {object_id}.motion.type is unsupported"
+            )
+        motion = {"type": motion_type}
+        if motion_type == "constant_acceleration":
+            acceleration = float(
+                motion_value.get("longitudinal_acceleration_m_s2", math.nan)
+            )
+            if not math.isfinite(acceleration) or abs(acceleration) > 0.1:
+                raise ValueError(
+                    f"dynamic scenario {object_id} acceleration is invalid"
+                )
+            motion["longitudinal_acceleration_m_s2"] = acceleration
+        if motion_type in {"sinusoidal_curve", "curved_speed_variation"}:
+            lateral_direction = vector(
+                "lateral_direction",
+                3,
+                source=motion_value,
+                namespace=f"{object_id}.motion",
+            )
+            lateral_norm = math.sqrt(
+                sum(value * value for value in lateral_direction)
+            )
+            if lateral_norm <= 1.0e-9:
+                raise ValueError(
+                    f"dynamic scenario {object_id}.motion lateral direction is zero"
+                )
+            lateral_direction = [value / lateral_norm for value in lateral_direction]
+            if abs(
+                sum(
+                    primary * lateral
+                    for primary, lateral in zip(direction, lateral_direction)
+                )
+            ) > 1.0e-4:
+                raise ValueError(
+                    f"dynamic scenario {object_id}.motion lateral direction "
+                    "must be perpendicular to direction"
+                )
+            amplitude = float(motion_value.get("lateral_amplitude_m", math.nan))
+            frequency = float(
+                motion_value.get("lateral_angular_frequency_rad_s", math.nan)
+            )
+            phase = float(motion_value.get("lateral_phase_rad", 0.0))
+            if not (
+                math.isfinite(amplitude)
+                and 0.0 <= amplitude <= 0.25
+                and math.isfinite(frequency)
+                and frequency > 0.0
+                and math.isfinite(phase)
+            ):
+                raise ValueError(
+                    f"dynamic scenario {object_id} curve parameters are invalid"
+                )
+            motion.update(
+                lateral_direction=lateral_direction,
+                lateral_amplitude_m=amplitude,
+                lateral_angular_frequency_rad_s=frequency,
+                lateral_phase_rad=phase,
+            )
+        if motion_type in {"smooth_speed_variation", "curved_speed_variation"}:
+            amplitude = float(
+                motion_value.get("speed_variation_amplitude_m_s", math.nan)
+            )
+            frequency = float(
+                motion_value.get("speed_variation_angular_frequency_rad_s", math.nan)
+            )
+            phase = float(motion_value.get("speed_variation_phase_rad", 0.0))
+            if not (
+                math.isfinite(amplitude)
+                and 0.0 <= amplitude <= speed
+                and math.isfinite(frequency)
+                and frequency > 0.0
+                and math.isfinite(phase)
+            ):
+                raise ValueError(
+                    f"dynamic scenario {object_id} speed variation is invalid"
+                )
+            motion.update(
+                speed_variation_amplitude_m_s=amplitude,
+                speed_variation_angular_frequency_rad_s=frequency,
+                speed_variation_phase_rad=phase,
+            )
         normalized.append(
             {
                 "id": object_id,
@@ -232,6 +336,7 @@ def _scenario_file(path: str | Path) -> dict:
                     "base_m": base,
                     "horizon_rate_m_s": rate,
                 },
+                "motion": motion,
             }
         )
     return {**payload, "objects": normalized}
@@ -240,11 +345,41 @@ def _scenario_file(path: str | Path) -> dict:
 def _scenario_file_objects(payload: dict, elapsed: float) -> list[dict]:
     objects = []
     for item in payload["objects"]:
-        displacement = item["speed_m_s"] * (elapsed - item["crossing_time_s"])
+        relative_time = elapsed - item["crossing_time_s"]
+        motion = item.get("motion", {"type": "constant_velocity"})
+        motion_type = motion["type"]
+        displacement = item["speed_m_s"] * relative_time
+        if motion_type == "constant_acceleration":
+            displacement += (
+                0.5
+                * motion["longitudinal_acceleration_m_s2"]
+                * relative_time**2
+            )
+        if motion_type in {"smooth_speed_variation", "curved_speed_variation"}:
+            amplitude = motion["speed_variation_amplitude_m_s"]
+            frequency = motion["speed_variation_angular_frequency_rad_s"]
+            phase = motion["speed_variation_phase_rad"]
+            displacement += amplitude / frequency * (
+                math.sin(frequency * relative_time + phase) - math.sin(phase)
+            )
         position = [
             anchor + direction * displacement
             for anchor, direction in zip(item["anchor_position"], item["direction"])
         ]
+        if motion_type in {"sinusoidal_curve", "curved_speed_variation"}:
+            amplitude = motion["lateral_amplitude_m"]
+            frequency = motion["lateral_angular_frequency_rad_s"]
+            phase = motion["lateral_phase_rad"]
+            lateral = amplitude * (
+                math.sin(frequency * relative_time + phase) - math.sin(phase)
+            )
+            position = [
+                value + direction * lateral
+                for value, direction in zip(
+                    position,
+                    motion["lateral_direction"],
+                )
+            ]
         inflation = item["inflation"]
         objects.append(
             {
