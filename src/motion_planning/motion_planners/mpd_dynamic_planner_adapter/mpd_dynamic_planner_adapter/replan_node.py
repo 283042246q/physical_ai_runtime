@@ -146,6 +146,7 @@ def _prepend_execution_prefix(
     bridge_start_unix_s: float,
     sample_dt_s: float,
 ) -> TrajectoryPlanResult:
+    """Build the exact JTC command: old motion/hold, bridge, then MPD suffix."""
     duration = bridge_start_unix_s - monitoring_start_unix_s
     if duration <= 0.0 or sample_dt_s <= 0.0:
         raise ValueError("execution prefix interval is invalid")
@@ -1562,11 +1563,42 @@ class MpdDynamicReplanNode(Node):
                 )
             return False
 
+        command_start = time.time() + self._command_lead_s
+        if command_start >= bridge_start:
+            self._counters["deadline_miss"] += 1
+            self._last_switch_decision = "command_prefix_deadline_miss"
+            return False
+        active_end = None
+        if self._active_plan is not None:
+            active_end = (
+                self._active_plan.start_unix_s
+                + self._active_plan.result.points[-1].time_from_start_s
+            )
+        old_motion_prefix_s = (
+            0.0
+            if active_end is None
+            else max(0.0, min(bridge_start, active_end) - command_start)
+        )
+        terminal_hold_prefix_s = (
+            0.0
+            if active_end is None
+            else max(0.0, bridge_start - max(command_start, active_end))
+        )
+        initial_hold_prefix_s = (
+            max(0.0, bridge_start - command_start)
+            if active_end is None
+            else 0.0
+        )
         selected.diagnostics["phase_timing"] = {
             "planning_submitted_unix_s": job.submitted_unix_ns * 1e-9,
+            "command_start_unix_s": command_start,
             "bridge_start_unix_s": bridge_start,
             "handoff_unix_s": handoff,
             "old_continuation_s": bridge_start - job.submitted_unix_ns * 1e-9,
+            "execution_prefix_s": bridge_start - command_start,
+            "old_motion_prefix_s": old_motion_prefix_s,
+            "terminal_hold_prefix_s": terminal_hold_prefix_s,
+            "initial_hold_prefix_s": initial_hold_prefix_s,
             "bridge_s": handoff - bridge_start,
             "mpd_suffix_s": selected.points[-1].time_from_start_s - (handoff - bridge_start),
         }
@@ -1574,24 +1606,27 @@ class MpdDynamicReplanNode(Node):
             dict(item) for item in self._last_candidate_clearance_diagnostics
         ]
         selected.diagnostics["switch_decision"] = selected_decision.__dict__
-        message = self._to_message(selected, job.bridge_start_unix_ns)
+        execution_result = _prepend_execution_prefix(
+            self._active_plan,
+            selected,
+            monitoring_start_unix_s=command_start,
+            bridge_start_unix_s=bridge_start,
+            sample_dt_s=self._splice_options["prefix_dt_s"],
+        )
+        message = self._to_message(execution_result, int(command_start * 1e9))
         self._trajectory_publisher.publish(message)
         if self._execution is None or not self._execution.submit(job.generation, message):
             self._counters["worker_error"] += 1
             return False
-        monitored = _prepend_execution_prefix(
-            self._active_plan,
-            selected,
-            monitoring_start_unix_s=now,
-            bridge_start_unix_s=bridge_start,
-            sample_dt_s=self._splice_options["prefix_dt_s"],
+        self._candidate_plans[job.generation] = (
+            TimedPlan(execution_result, command_start),
+            selected_collision,
         )
-        self._candidate_plans[job.generation] = (TimedPlan(monitored, now), selected_collision)
         self._record_replay(
             "record_candidate",
             job.generation,
-            selected,
-            start_unix_s=bridge_start,
+            execution_result,
+            start_unix_s=command_start,
             handoff_unix_s=handoff,
         )
         self._last_commit_unix_s = bridge_start

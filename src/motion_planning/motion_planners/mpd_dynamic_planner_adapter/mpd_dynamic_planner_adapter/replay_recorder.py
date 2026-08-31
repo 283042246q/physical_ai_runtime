@@ -196,6 +196,14 @@ class DynamicReplayRecorder:
                                 * 1e9
                             )
                         ),
+                        "command_start_s": self._relative_s(
+                            int(
+                                result.diagnostics["phase_timing"].get(
+                                    "command_start_unix_s", start_unix_s
+                                )
+                                * 1e9
+                            )
+                        ),
                         "bridge_start_s": self._relative_s(
                             int(
                                 result.diagnostics["phase_timing"][
@@ -212,6 +220,26 @@ class DynamicReplayRecorder:
                         ),
                         "old_continuation_s": float(
                             result.diagnostics["phase_timing"]["old_continuation_s"]
+                        ),
+                        "execution_prefix_s": float(
+                            result.diagnostics["phase_timing"].get(
+                                "execution_prefix_s", 0.0
+                            )
+                        ),
+                        "old_motion_prefix_s": float(
+                            result.diagnostics["phase_timing"].get(
+                                "old_motion_prefix_s", 0.0
+                            )
+                        ),
+                        "terminal_hold_prefix_s": float(
+                            result.diagnostics["phase_timing"].get(
+                                "terminal_hold_prefix_s", 0.0
+                            )
+                        ),
+                        "initial_hold_prefix_s": float(
+                            result.diagnostics["phase_timing"].get(
+                                "initial_hold_prefix_s", 0.0
+                            )
                         ),
                         "bridge_s": float(
                             result.diagnostics["phase_timing"]["bridge_s"]
