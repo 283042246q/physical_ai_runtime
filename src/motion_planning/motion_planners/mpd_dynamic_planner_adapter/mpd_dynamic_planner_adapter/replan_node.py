@@ -475,6 +475,7 @@ class MpdDynamicReplanNode(Node):
                 "minimum_interval_kept_old",
                 "near_goal_kept_old",
                 "terminal_hold_replans",
+                "scheduled_activation_waits",
                 "goal_submitted",
                 "goal_accepted",
                 "goal_terminal",
@@ -667,6 +668,12 @@ class MpdDynamicReplanNode(Node):
         )
 
     def _schedule(self) -> None:
+        self._advance_execution_timeline()
+        if self._scheduled_plan_id is not None:
+            # A future JTC goal already owns the command prefix.  Replacing it
+            # every planning period before bridge_start would starve activation.
+            self._counters["scheduled_activation_waits"] += 1
+            return
         world = self._world_manager.snapshot
         if self._emergency_stopped or self._braking or self._state is None or self._target is None or world is None:
             return

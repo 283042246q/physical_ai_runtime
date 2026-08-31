@@ -50,6 +50,22 @@ def test_phase5_defaults_to_common_window_mean_cvar_clearance():
         rclpy.shutdown()
 
 
+def test_scheduled_future_goal_defers_new_planning_until_activation():
+    rclpy.init()
+    node = MpdDynamicReplanNode()
+    try:
+        node._scheduled_plan_id = 999
+
+        node._schedule()
+
+        assert node._scheduled_plan_id == 999
+        assert node._counters["scheduled_activation_waits"] == 1
+        assert node._counters["submitted"] == 0
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
 def test_success_keeps_target_and_enters_protected_terminal_hold():
     rclpy.init()
     node = MpdDynamicReplanNode()
