@@ -177,7 +177,7 @@ class DynamicReplayRecorder:
                 trajectory=trajectory,
                 created_s=created_s,
                 start_s=self._relative_s(int(start_unix_s * 1e9)),
-                status="braking" if braking else "accepted",
+                status="braking" if braking else "scheduled",
                 handoff_s=(
                     None
                     if handoff_unix_s is None
@@ -315,27 +315,113 @@ class DynamicReplayRecorder:
             if plan_id is None:
                 return
             plan = self._plans[plan_id]
+            activation_s = (
+                plan.start_s
+                if plan.phase_timing is None
+                else plan.phase_timing.get("bridge_start_s", plan.start_s)
+            )
             if self._active_plan_id is not None and self._active_plan_id != plan_id:
                 previous = self._plans[self._active_plan_id]
                 previous.active_until_s = min(
-                    plan.start_s,
+                    activation_s,
                     previous.start_s + previous.duration_s,
                 )
-                if previous.status == "accepted":
+                if previous.status in ("accepted", "interrupted"):
                     previous.status = "superseded"
-            plan.active_from_s = plan.start_s
+            plan.active_from_s = activation_s
+            if plan.status == "scheduled":
+                plan.status = "accepted"
             self._active_plan_id = plan_id
-            if plan.handoff_s is not None:
-                self._events.append(
-                    {"type": "handoff", "time_s": plan.handoff_s, "plan_id": plan_id}
-                )
 
-    def record_terminal(self, generation: int, unix_ns: int | None = None) -> None:
+    def record_handoff(self, generation: int) -> None:
         with self._lock:
             plan_id = self._generation_to_plan.get(int(generation))
-            if plan_id is None or self._active_plan_id != plan_id:
+            if plan_id is None:
                 return
             plan = self._plans[plan_id]
+            if plan.active_from_s is None or plan.handoff_s is None:
+                return
+            if any(
+                event.get("type") == "handoff" and event.get("plan_id") == plan_id
+                for event in self._events
+            ):
+                return
+            self._events.append(
+                {"type": "handoff", "time_s": plan.handoff_s, "plan_id": plan_id}
+            )
+
+    def record_interruption(
+        self,
+        generation: int,
+        unix_ns: int,
+        *,
+        reason: str,
+    ) -> None:
+        """Record brake interruption without inventing a future active interval."""
+        with self._lock:
+            plan_id = self._generation_to_plan.get(int(generation))
+            if plan_id is None:
+                return
+            plan = self._plans[plan_id]
+            interruption_s = self._relative_s(unix_ns)
+            bridge_start_s = (
+                plan.start_s
+                if plan.phase_timing is None
+                else plan.phase_timing.get("bridge_start_s", plan.start_s)
+            )
+            if interruption_s < bridge_start_s or plan.active_from_s is None:
+                plan.status = "canceled_before_activation"
+                plan.active_from_s = None
+                plan.active_until_s = None
+            else:
+                handoff_s = plan.handoff_s
+                plan.status = (
+                    "interrupted_before_handoff"
+                    if handoff_s is not None and interruption_s < handoff_s
+                    else "interrupted"
+                )
+                plan.active_until_s = min(
+                    max(interruption_s, plan.active_from_s + 1e-6),
+                    plan.start_s + plan.duration_s,
+                )
+            self._events = [
+                event
+                for event in self._events
+                if not (
+                    event.get("type") == "handoff" and event.get("plan_id") == plan_id
+                )
+            ]
+            self._events.append(
+                {
+                    "type": "plan_interruption",
+                    "time_s": interruption_s,
+                    "plan_id": plan_id,
+                    "reason": reason,
+                    "status": plan.status,
+                }
+            )
+
+    def record_terminal(
+        self,
+        generation: int,
+        state: str | None = None,
+        unix_ns: int | None = None,
+    ) -> None:
+        with self._lock:
+            plan_id = self._generation_to_plan.get(int(generation))
+            if plan_id is None:
+                return
+            plan = self._plans[plan_id]
+            if plan.active_from_s is None:
+                if plan.status == "scheduled":
+                    plan.status = (
+                        "canceled_before_activation"
+                        if state == "CANCELED"
+                        else "rejected"
+                    )
+                return
+            if self._active_plan_id != plan_id:
+                return
             terminal_s = self._relative_s(time.time_ns() if unix_ns is None else unix_ns)
             plan.active_until_s = min(
                 max(terminal_s, (plan.active_from_s or plan.start_s) + 1e-6),
@@ -352,8 +438,6 @@ class DynamicReplayRecorder:
                         max(duration_s, plan.active_from_s + 1e-6),
                         plan.start_s + plan.duration_s,
                     )
-                if plan.status == "accepted" and plan.active_from_s is None:
-                    plan.status = "rejected"
         duration_s = max(
             duration_s,
             max(
@@ -401,7 +485,7 @@ class DynamicReplayRecorder:
             plans.append(payload)
         manifest = {
             "schema": "mpd_dynamic_replay",
-            "schema_version": 1,
+            "schema_version": 2,
             "env_name": self.env_name,
             "frame_id": self.frame_id,
             "duration_s": duration_s,

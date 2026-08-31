@@ -431,6 +431,8 @@ class MpdDynamicReplanNode(Node):
         self._active_plan: TimedPlan | None = None
         self._active_collision_plan: TimedCollisionPlan | None = None
         self._active_plan_id: int | None = None
+        self._scheduled_plan_id: int | None = None
+        self._handoff_recorded_plan_ids: set[int] = set()
         self._candidate_plans: dict[int, tuple[TimedPlan, TimedCollisionPlan | None]] = {}
         self._emergency_stopped = False
         self._braking = False
@@ -531,6 +533,8 @@ class MpdDynamicReplanNode(Node):
                 "record_candidate",
                 "record_rejected",
                 "record_activation",
+                "record_handoff",
+                "record_interruption",
                 "record_terminal",
             }:
                 recorder.flush()
@@ -605,9 +609,22 @@ class MpdDynamicReplanNode(Node):
         self._emergency_stopped = True
         self._target = None
         self._goal_reached = False
+        interrupted_plan_id = (
+            self._scheduled_plan_id
+            if self._scheduled_plan_id is not None
+            else self._active_plan_id
+        )
+        if interrupted_plan_id is not None:
+            self._record_replay(
+                "record_interruption",
+                interrupted_plan_id,
+                time.time_ns(),
+                reason="emergency_stop",
+            )
         self._active_plan = None
         self._active_collision_plan = None
         self._active_plan_id = None
+        self._scheduled_plan_id = None
         self._invalidate()
         if self._execution is not None:
             self._execution.cancel()
@@ -783,6 +800,7 @@ class MpdDynamicReplanNode(Node):
         self._counters["submitted"] += 1
 
     def _drain(self) -> None:
+        self._advance_execution_timeline()
         for completion in self._planner.drain():
             if completion.superseded or completion.generation != self._generation:
                 self._counters["superseded"] += 1
@@ -1742,6 +1760,20 @@ class MpdDynamicReplanNode(Node):
             self._target = None
         self._goal_reached = False
         self._invalidate()
+        interruption_ns = time.time_ns()
+        interrupted_plan_id = (
+            self._scheduled_plan_id
+            if self._scheduled_plan_id is not None
+            else self._active_plan_id
+        )
+        if interrupted_plan_id is not None:
+            self._record_replay(
+                "record_interruption",
+                interrupted_plan_id,
+                interruption_ns,
+                reason=reason,
+            )
+        self._scheduled_plan_id = None
         if self._state is None:
             if self._execution is not None:
                 self._execution.cancel()
@@ -1769,16 +1801,53 @@ class MpdDynamicReplanNode(Node):
         self.get_logger().error(f"controlled braking requested: {reason}")
 
     def _on_goal_accepted(self, plan_id: int) -> None:
-        candidate = self._candidate_plans.get(plan_id)
-        if candidate is not None:
-            self._active_plan, self._active_collision_plan = candidate
-            self._active_plan_id = plan_id
-            if self._active_collision_plan is not None:
-                self._goal_reached = False
-        self._record_replay("record_activation", plan_id)
+        self._advance_execution_timeline()
+        if self._scheduled_plan_id is not None and self._scheduled_plan_id != plan_id:
+            self._record_replay(
+                "record_interruption",
+                self._scheduled_plan_id,
+                time.time_ns(),
+                reason="replacement_before_activation",
+            )
+        if plan_id in self._candidate_plans:
+            self._scheduled_plan_id = plan_id
         self._counters["goal_accepted"] += 1
 
+    def _advance_execution_timeline(self) -> None:
+        """Promote accepted future goals only when their command phase becomes active."""
+        now = time.time()
+        scheduled_id = self._scheduled_plan_id
+        if scheduled_id is not None:
+            candidate = self._candidate_plans.get(scheduled_id)
+            if candidate is not None:
+                timed_plan, collision_plan = candidate
+                timing = timed_plan.result.diagnostics.get("phase_timing", {})
+                activation_s = float(
+                    timing.get("bridge_start_unix_s", timed_plan.start_unix_s)
+                )
+                if now >= activation_s:
+                    self._active_plan = timed_plan
+                    self._active_collision_plan = collision_plan
+                    self._active_plan_id = scheduled_id
+                    self._scheduled_plan_id = None
+                    if collision_plan is not None:
+                        self._goal_reached = False
+                    self._record_replay("record_activation", scheduled_id)
+
+        active_id = self._active_plan_id
+        if active_id is None or active_id in self._handoff_recorded_plan_ids:
+            return
+        candidate = self._candidate_plans.get(active_id)
+        if candidate is None:
+            return
+        timing = candidate[0].result.diagnostics.get("phase_timing", {})
+        handoff_s = timing.get("handoff_unix_s")
+        if handoff_s is not None and now >= float(handoff_s):
+            self._record_replay("record_handoff", active_id)
+            self._handoff_recorded_plan_ids.add(active_id)
+
     def _on_goal_terminal(self, plan_id: int, state: str) -> None:
+        self._advance_execution_timeline()
         self._candidate_plans.pop(plan_id, None)
         self._counters["goal_terminal"] += 1
         execution_idle = (
@@ -1787,6 +1856,9 @@ class MpdDynamicReplanNode(Node):
             and self._execution.pending_plan_id is None
         )
         terminal_is_active = plan_id == self._active_plan_id
+        terminal_is_scheduled = plan_id == self._scheduled_plan_id
+        if terminal_is_scheduled:
+            self._scheduled_plan_id = None
         if (
             state == "SUCCEEDED"
             and execution_idle
@@ -1810,7 +1882,17 @@ class MpdDynamicReplanNode(Node):
             self._goal_reached = False
         if state in ("REJECTED", "ABORTED", "SEND_ERROR", "RESULT_ERROR"):
             self.get_logger().error(f"JTC dynamic plan {plan_id} entered {state}")
-        self._record_replay("record_terminal", plan_id)
+        # A controller-side preemption of the old goal is expected after a
+        # future replacement has been accepted: its explicit prefix carries
+        # the same reference until bridge_start.  Let activation at that
+        # boundary close the old replay interval instead of inventing a gap.
+        replacement_owns_prefix = (
+            state == "CANCELED"
+            and terminal_is_active
+            and self._scheduled_plan_id is not None
+        )
+        if not replacement_owns_prefix:
+            self._record_replay("record_terminal", plan_id, state)
 
     @staticmethod
     def _to_message(result, start_unix_ns: int) -> JointTrajectory:

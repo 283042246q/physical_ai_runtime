@@ -25,6 +25,24 @@ def _result(offset=0.0):
     )
 
 
+def _scheduled_result(*, bridge_start_s: float, handoff_s: float):
+    result = _result()
+    result.diagnostics["phase_timing"] = {
+        "planning_submitted_unix_s": 1.0,
+        "command_start_unix_s": 1.1,
+        "bridge_start_unix_s": bridge_start_s,
+        "handoff_unix_s": handoff_s,
+        "old_continuation_s": bridge_start_s - 1.0,
+        "execution_prefix_s": bridge_start_s - 1.1,
+        "old_motion_prefix_s": bridge_start_s - 1.1,
+        "terminal_hold_prefix_s": 0.0,
+        "initial_hold_prefix_s": 0.0,
+        "bridge_s": handoff_s - bridge_start_s,
+        "mpd_suffix_s": 1.0,
+    }
+    return result
+
+
 def _recorder(tmp_path):
     scene = tmp_path / "scene.json"
     scene.write_text(
@@ -58,6 +76,7 @@ def test_recorder_builds_superseded_handoff_timeline(tmp_path):
         handoff_unix_s=2.0,
     )
     recorder.record_activation(10)
+    recorder.record_handoff(10)
     recorder.record_world(DynamicWorldSnapshot(2, "fr3_link0", 2_000_000_000, 21_000_000_000, ()))
     recorder.record_candidate(
         11,
@@ -66,10 +85,12 @@ def test_recorder_builds_superseded_handoff_timeline(tmp_path):
         handoff_unix_s=3.0,
     )
     recorder.record_activation(11)
+    recorder.record_handoff(11)
 
     manifest_path = recorder.close(unix_ns=4_000_000_000)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == "mpd_dynamic_replay"
+    assert manifest["schema_version"] == 2
     assert manifest["env_name"] == "EnvOpenDrawerShelf"
     assert manifest["duration_s"] == 3.0
     assert len(manifest["world_snapshots"]) == 2
@@ -95,6 +116,77 @@ def test_recorder_marks_braking_plan_and_event(tmp_path):
     assert manifest["plans"][0]["status"] == "braking"
     assert manifest["events"][0]["type"] == "brake"
     assert manifest["events"][0]["reason"] == "guard_collision"
+
+
+def test_future_goal_remains_scheduled_until_bridge_start(tmp_path):
+    recorder = _recorder(tmp_path)
+    recorder.record_world(
+        DynamicWorldSnapshot(1, "fr3_link0", 1_000_000_000, 20_000_000_000, ())
+    )
+    recorder.record_candidate(
+        21,
+        _scheduled_result(bridge_start_s=2.0, handoff_s=2.5),
+        start_unix_s=1.1,
+        handoff_unix_s=2.5,
+    )
+
+    scheduled = json.loads(recorder.flush(unix_ns=1_500_000_000).read_text())
+    assert scheduled["plans"][0]["status"] == "scheduled"
+    assert "active_from_s" not in scheduled["plans"][0]
+
+    recorder.record_activation(21)
+    recorder.record_handoff(21)
+    active = json.loads(recorder.close(unix_ns=3_000_000_000).read_text())
+    assert active["plans"][0]["status"] == "accepted"
+    assert active["plans"][0]["active_from_s"] == 1.0
+    assert active["events"][0]["type"] == "handoff"
+
+
+def test_brake_before_bridge_cancels_without_active_interval_or_handoff(tmp_path):
+    recorder = _recorder(tmp_path)
+    recorder.record_world(
+        DynamicWorldSnapshot(1, "fr3_link0", 1_000_000_000, 20_000_000_000, ())
+    )
+    recorder.record_candidate(
+        22,
+        _scheduled_result(bridge_start_s=2.0, handoff_s=2.5),
+        start_unix_s=1.1,
+        handoff_unix_s=2.5,
+    )
+
+    recorder.record_interruption(
+        22, 1_800_000_000, reason="dynamic_collision"
+    )
+    manifest = json.loads(recorder.close(unix_ns=3_000_000_000).read_text())
+
+    assert manifest["plans"][0]["status"] == "canceled_before_activation"
+    assert "active_from_s" not in manifest["plans"][0]
+    assert not any(event["type"] == "handoff" for event in manifest["events"])
+
+
+def test_brake_inside_bridge_records_real_interval_without_handoff(tmp_path):
+    recorder = _recorder(tmp_path)
+    recorder.record_world(
+        DynamicWorldSnapshot(1, "fr3_link0", 1_000_000_000, 20_000_000_000, ())
+    )
+    recorder.record_candidate(
+        23,
+        _scheduled_result(bridge_start_s=2.0, handoff_s=2.5),
+        start_unix_s=1.1,
+        handoff_unix_s=2.5,
+    )
+    recorder.record_activation(23)
+
+    recorder.record_interruption(
+        23, 2_300_000_000, reason="dynamic_collision"
+    )
+    manifest = json.loads(recorder.close(unix_ns=3_000_000_000).read_text())
+
+    plan = manifest["plans"][0]
+    assert plan["status"] == "interrupted_before_handoff"
+    assert plan["active_from_s"] == 1.0
+    assert plan["active_until_s"] == 1.3
+    assert not any(event["type"] == "handoff" for event in manifest["events"])
 
 
 def test_recorder_flush_checkpoints_before_shutdown(tmp_path):
