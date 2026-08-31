@@ -6,7 +6,10 @@ from manipulation_motion_planning.contracts import (
 )
 from mpd_planner_adapter.trajectory import TimedPlan
 
-from mpd_dynamic_planner_adapter.replan_node import _prepend_execution_prefix
+from mpd_dynamic_planner_adapter.replan_node import (
+    _controller_reference_jump,
+    _prepend_execution_prefix,
+)
 
 
 NAMES = [f"fr3_joint{index}" for index in range(1, 8)]
@@ -80,3 +83,35 @@ def test_first_plan_prefix_explicitly_holds_the_selected_start_state():
         point.positions == pytest.approx([0.4] * 7)
         for point in command.points[:3]
     )
+
+
+def test_controller_reference_jump_uses_old_reference_at_command_start():
+    active = TimedPlan(
+        TrajectoryPlanResult(
+            valid=True,
+            joint_names=NAMES,
+            points=[_point(0.0, 0.2, 0.0), _point(0.2, 0.0, 2.0)],
+        ),
+        10.0,
+    )
+    command = TrajectoryPlanResult(
+        valid=True,
+        joint_names=NAMES,
+        points=[_point(0.125, 0.2, 0.0), _point(0.2, 0.0, 1.0)],
+    )
+
+    jump = _controller_reference_jump(active, [99.0] * 7, command, 11.25)
+
+    assert jump == pytest.approx(0.0)
+
+
+def test_controller_reference_jump_uses_measured_state_for_first_plan():
+    command = TrajectoryPlanResult(
+        valid=True,
+        joint_names=NAMES,
+        points=[_point(1.25, 0.0, 0.0), _point(2.0, 0.0, 1.0)],
+    )
+
+    jump = _controller_reference_jump(None, [1.0] * 7, command, 11.25)
+
+    assert jump == pytest.approx(0.25)

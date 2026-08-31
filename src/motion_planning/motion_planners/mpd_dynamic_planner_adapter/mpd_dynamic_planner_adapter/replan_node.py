@@ -192,6 +192,30 @@ def _prepend_execution_prefix(
     )
 
 
+def _controller_reference_jump(
+    active_plan: TimedPlan | None,
+    measured_positions: list[float],
+    command: TrajectoryPlanResult,
+    command_start_unix_s: float,
+) -> float:
+    """Return the largest joint-position jump at the new JTC goal boundary."""
+    if not command.points:
+        raise ValueError("command has no trajectory points")
+    if active_plan is None:
+        old_reference = np.asarray(measured_positions, dtype=float)
+    else:
+        old_reference = np.asarray(
+            predict_point_with_terminal_hold(
+                active_plan, command_start_unix_s
+            ).positions,
+            dtype=float,
+        )
+    new_reference = np.asarray(command.points[0].positions, dtype=float)
+    if old_reference.shape != new_reference.shape:
+        raise ValueError("controller references have different joint dimensions")
+    return float(np.max(np.abs(new_reference - old_reference)))
+
+
 class MpdDynamicReplanNode(Node):
     _default_clearance_score_mode = "mean_cvar"
     _split_terminal_hold_clearance = False
@@ -1612,6 +1636,17 @@ class MpdDynamicReplanNode(Node):
             monitoring_start_unix_s=command_start,
             bridge_start_unix_s=bridge_start,
             sample_dt_s=self._splice_options["prefix_dt_s"],
+        )
+        selected.diagnostics["phase_timing"]["controller_reference_jump_rad"] = (
+            _controller_reference_jump(
+                self._active_plan,
+                list(self._state.positions),
+                execution_result,
+                command_start,
+            )
+        )
+        execution_result.diagnostics["phase_timing"] = dict(
+            selected.diagnostics["phase_timing"]
         )
         message = self._to_message(execution_result, int(command_start * 1e9))
         self._trajectory_publisher.publish(message)

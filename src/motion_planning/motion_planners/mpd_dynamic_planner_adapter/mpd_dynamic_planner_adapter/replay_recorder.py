@@ -236,6 +236,11 @@ class DynamicReplayRecorder:
                                 "terminal_hold_prefix_s", 0.0
                             )
                         ),
+                        "controller_reference_jump_rad": float(
+                            result.diagnostics["phase_timing"].get(
+                                "controller_reference_jump_rad", 0.0
+                            )
+                        ),
                         "initial_hold_prefix_s": float(
                             result.diagnostics["phase_timing"].get(
                                 "initial_hold_prefix_s", 0.0
