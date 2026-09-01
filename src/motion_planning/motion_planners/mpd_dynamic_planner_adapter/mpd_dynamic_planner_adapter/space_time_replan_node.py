@@ -14,7 +14,7 @@ class MpdSpaceTimeReplanNode(MpdDynamicReplanNode):
     _default_clearance_score_mode = "mean_cvar"
     _split_terminal_hold_clearance = True
     _default_cost_tail_kinematic_weight = 4.0
-    _default_cost_deviation_weight = 1.0
+    _default_cost_deviation_weight = 0.15
     _default_relative_switching_hysteresis = 0.10
 
     def __init__(self) -> None:

@@ -43,7 +43,7 @@ def test_phase5_defaults_to_common_window_mean_cvar_clearance():
         assert node._cost_weights["tail_kinematic"] == 4.0
         assert node._cost_weights["motion_clearance"] == 4.0
         assert node._cost_weights["terminal_hold_clearance"] == 0.2
-        assert node._cost_weights["deviation"] == 1.0
+        assert node._cost_weights["deviation"] == 0.15
         assert node._relative_switching_hysteresis == 0.10
     finally:
         node.destroy_node()

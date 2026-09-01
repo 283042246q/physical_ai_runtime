@@ -31,6 +31,66 @@ class SwitchDecision:
     improvement: float
 
 
+@dataclass(frozen=True)
+class AdaptiveDeviationWeight:
+    effective_weight: float
+    clearance_gate: float
+    ttc_gate: float
+    predicted_ttc_s: float
+
+
+def _smoothstep_gate(value: float, zero_at: float, full_at: float) -> float:
+    if not full_at > zero_at:
+        raise ValueError("adaptive deviation thresholds must be strictly ordered")
+    if math.isnan(value):
+        return 0.0
+    if value <= zero_at:
+        return 0.0
+    if value >= full_at:
+        return 1.0
+    normalized = (value - zero_at) / (full_at - zero_at)
+    return normalized * normalized * (3.0 - 2.0 * normalized)
+
+
+def adaptive_deviation_weight(
+    base_weight: float,
+    *,
+    minimum_clearance_m: float,
+    first_collision_unix_s: float | None,
+    reference_unix_s: float,
+    old_hard_safe: bool,
+    clearance_zero_m: float,
+    clearance_full_m: float,
+    ttc_zero_s: float,
+    ttc_full_s: float,
+) -> AdaptiveDeviationWeight:
+    """Fade continuity preference as the active trajectory becomes risky.
+
+    Clearance and time-to-collision use smoothstep gates. The more conservative
+    gate wins, and a hard collision on the active motion removes the deviation
+    preference completely.
+    """
+
+    if base_weight < 0.0 or not math.isfinite(base_weight):
+        raise ValueError("base deviation weight must be finite and non-negative")
+    predicted_ttc_s = (
+        math.inf
+        if first_collision_unix_s is None
+        else float(first_collision_unix_s) - float(reference_unix_s)
+    )
+    clearance_gate = _smoothstep_gate(
+        float(minimum_clearance_m), clearance_zero_m, clearance_full_m
+    )
+    ttc_gate = _smoothstep_gate(predicted_ttc_s, ttc_zero_s, ttc_full_s)
+    risk_gate = min(clearance_gate, ttc_gate) if old_hard_safe else 0.0
+    return AdaptiveDeviationWeight(
+        effective_weight=base_weight * risk_gate,
+        clearance_gate=clearance_gate,
+        ttc_gate=ttc_gate,
+        predicted_ttc_s=predicted_ttc_s,
+    )
+
+
 def _arrays(result: TrajectoryPlanResult) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     times = np.asarray([point.time_from_start_s for point in result.points], dtype=np.float64)
     positions = np.asarray([point.positions for point in result.points], dtype=np.float64)

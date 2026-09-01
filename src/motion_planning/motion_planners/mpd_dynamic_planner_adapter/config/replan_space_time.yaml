@@ -54,7 +54,8 @@ mpd_space_time_replanner:
     # Phase 5 separates the moving trajectory from its terminal hold.
     cost_motion_clearance_weight: 4.0
     cost_terminal_hold_clearance_weight: 0.2
-    cost_deviation_weight: 1.0
+    # Full continuity weight; runtime risk gates fade it toward zero.
+    cost_deviation_weight: 0.15
     cost_mpd_weight: 0.10
     cost_bridge_weight: 0.10
     cost_switch_penalty: 0.02

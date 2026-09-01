@@ -41,7 +41,7 @@ def test_phase4_aligned_profile_matches_requested_ros_weights():
     assert parameters["socket_path"].endswith(
         "mpd-dynamic-aligned-runtime.sock"
     )
-    assert parameters["cost_deviation_weight"] == 1.0
+    assert parameters["cost_deviation_weight"] == 0.15
     assert parameters["switching_hysteresis"] == 0.02
     assert parameters["relative_switching_hysteresis"] == 0.10
     assert parameters["split_terminal_hold_clearance"] is True
@@ -63,7 +63,7 @@ def test_phase5_has_separate_entry_config_socket_and_mode():
     assert "cost_tail_kinematic_weight: 4.0" in config
     assert "cost_motion_clearance_weight: 4.0" in config
     assert "cost_terminal_hold_clearance_weight: 0.2" in config
-    assert "cost_deviation_weight: 1.0" in config
+    assert "cost_deviation_weight: 0.15" in config
     assert "relative_switching_hysteresis: 0.10" in config
     assert "jtc_safe_stop" in launch
 

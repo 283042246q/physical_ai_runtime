@@ -6,11 +6,53 @@ from manipulation_motion_planning.contracts import (
 )
 from mpd_dynamic_planner_adapter.candidate_selector import (
     CandidateCost,
+    adaptive_deviation_weight,
     choose_hysteretic_switch,
     clearance_cost,
     common_window_deviation_cost,
     common_window_kinematic_cost,
 )
+
+
+def _adaptive_weight(clearance, collision_time=None, *, hard_safe=True):
+    return adaptive_deviation_weight(
+        0.15,
+        minimum_clearance_m=clearance,
+        first_collision_unix_s=collision_time,
+        reference_unix_s=100.0,
+        old_hard_safe=hard_safe,
+        clearance_zero_m=0.02,
+        clearance_full_m=0.10,
+        ttc_zero_s=2.0,
+        ttc_full_s=5.0,
+    )
+
+
+def test_adaptive_deviation_keeps_full_weight_for_safe_distant_old_plan():
+    schedule = _adaptive_weight(0.12)
+
+    assert schedule.effective_weight == 0.15
+    assert schedule.clearance_gate == 1.0
+    assert schedule.ttc_gate == 1.0
+    assert math.isinf(schedule.predicted_ttc_s)
+
+
+def test_adaptive_deviation_uses_the_more_conservative_smooth_risk_gate():
+    clearance_limited = _adaptive_weight(0.06, 110.0)
+    ttc_limited = _adaptive_weight(0.12, 103.5)
+
+    assert math.isclose(clearance_limited.clearance_gate, 0.5)
+    assert math.isclose(clearance_limited.effective_weight, 0.075)
+    assert math.isclose(ttc_limited.ttc_gate, 0.5)
+    assert math.isclose(ttc_limited.effective_weight, 0.075)
+
+
+def test_adaptive_deviation_is_zero_for_imminent_or_hard_unsafe_old_plan():
+    imminent = _adaptive_weight(0.12, 101.5)
+    hard_unsafe = _adaptive_weight(0.12, 110.0, hard_safe=False)
+
+    assert imminent.effective_weight == 0.0
+    assert hard_unsafe.effective_weight == 0.0
 
 
 def _candidate(index, total):

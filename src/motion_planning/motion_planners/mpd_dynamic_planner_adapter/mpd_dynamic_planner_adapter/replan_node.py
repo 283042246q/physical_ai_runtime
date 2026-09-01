@@ -43,6 +43,7 @@ from .collision_guard import (
 from .dynamic_world import DynamicWorldError, DynamicWorldManager, DynamicWorldSnapshot
 from .candidate_selector import (
     CandidateCost,
+    adaptive_deviation_weight,
     choose_hysteretic_switch,
     clearance_cost,
     common_window_deviation_cost,
@@ -341,6 +342,9 @@ class MpdDynamicReplanNode(Node):
         )
         self._comparison_sample_dt_s = float(value("comparison_sample_dt_s"))
         self._preferred_clearance_m = float(value("preferred_clearance_m"))
+        self._guard_minimum_clearance_m = float(
+            value("guard_minimum_clearance_m")
+        )
         self._clearance_score_mode = str(value("clearance_score_mode"))
         self._clearance_cvar_fraction = float(value("clearance_cvar_fraction"))
         self._clearance_mean_weight = float(value("clearance_mean_weight"))
@@ -382,6 +386,8 @@ class MpdDynamicReplanNode(Node):
             or self._switching_hysteresis < 0.0
             or self._relative_switching_hysteresis < 0.0
             or self._bridge_max_active_deviation_rad <= 0.0
+            or self._guard_minimum_clearance_m < 0.0
+            or self._preferred_clearance_m <= self._guard_minimum_clearance_m
         ):
             raise ValueError("dynamic handoff comparison parameters are invalid")
         if any(weight < 0.0 for weight in self._cost_weights.values()):
@@ -412,7 +418,7 @@ class MpdDynamicReplanNode(Node):
             check_dt_s=float(value("guard_check_dt_s")),
             covariance_sigma=covariance_sigma,
             process_acceleration_std_m_s2=process_std,
-            minimum_clearance_m=float(value("guard_minimum_clearance_m")),
+            minimum_clearance_m=self._guard_minimum_clearance_m,
         )
         self._backend = DynamicMpdGlobalTrajectoryBackend(
             str(value("socket_path")),
@@ -975,6 +981,17 @@ class MpdDynamicReplanNode(Node):
                 "kinematic_cost": None,
                 "tail_kinematic_cost": None,
                 "deviation_cost": None,
+                "deviation_weight_base": self._cost_weights["deviation"],
+                "deviation_weight_effective": None,
+                "deviation_clearance_gate": None,
+                "deviation_ttc_gate": None,
+                "deviation_clearance_zero_m": None,
+                "deviation_clearance_full_m": None,
+                "deviation_ttc_zero_s": None,
+                "deviation_ttc_full_s": None,
+                "old_predicted_minimum_clearance_m": None,
+                "old_predicted_ttc_s": None,
+                "deviation_contribution": None,
                 "clearance_score": None,
                 "clearance_contribution": None,
                 "mpd_normalized_cost": None,
@@ -997,8 +1014,113 @@ class MpdDynamicReplanNode(Node):
             validation_now = _validation_start_unix_s(evaluation_world)
             candidate_costs = []
             candidate_artifacts = {}
+            comparison_end = handoff + self._trajectory_duration_s
+            old_score_risk = None
+            old_hard_risk = None
+            old_hard_motion_safe = self._active_collision_plan is None
+            if self._active_collision_plan is not None:
+                try:
+                    old_comparison_collision = extend_collision_plan_with_terminal_hold(
+                        self._active_collision_plan, comparison_end
+                    )
+                    if self._clearance_score_mode == "mean_cvar":
+                        old_score_risk = self._guard.validate(
+                            old_comparison_collision,
+                            evaluation_world,
+                            handoff,
+                            comparison_end,
+                            preferred_clearance_m=self._preferred_clearance_m,
+                            cvar_fraction=self._clearance_cvar_fraction,
+                            terminal_hold_start_unix_s=float(
+                                self._active_collision_plan.absolute_times_s[-1]
+                            ),
+                        )
+                        active_end = float(
+                            self._active_collision_plan.absolute_times_s[-1]
+                        )
+                        if handoff < active_end - 1e-9:
+                            old_hard_risk = validate_collision_plan_actual_duration(
+                                self._guard,
+                                self._active_collision_plan,
+                                evaluation_world,
+                                handoff,
+                            )
+                            old_hard_motion_safe = old_hard_risk.safe
+                        else:
+                            # Only terminal hold remains; TTC/clearance, rather
+                            # than an empty hard-motion interval, controls decay.
+                            old_hard_motion_safe = True
+                    else:
+                        old_score_risk = self._guard.validate(
+                            old_comparison_collision,
+                            evaluation_world,
+                            handoff,
+                            comparison_end,
+                        )
+                        old_hard_risk = old_score_risk
+                        old_hard_motion_safe = old_hard_risk.safe
+                except ValueError:
+                    old_score_risk = None
+                    old_hard_risk = None
+                    old_hard_motion_safe = False
+
+            clearance_zero_m = self._guard_minimum_clearance_m + 0.2 * (
+                self._preferred_clearance_m - self._guard_minimum_clearance_m
+            )
+            ttc_zero_s = self._planning_budget_s + max(
+                self._command_lead_s, self._commit_margin_s
+            )
+            ttc_full_s = ttc_zero_s + max(
+                self._replacement_retry_reserve_s, self._comparison_horizon_s
+            )
+            deviation_schedule = adaptive_deviation_weight(
+                self._cost_weights["deviation"],
+                minimum_clearance_m=(
+                    math.inf
+                    if old_score_risk is None and self._active_plan is None
+                    else (
+                        math.nan
+                        if old_score_risk is None
+                        else old_score_risk.minimum_clearance_m
+                    )
+                ),
+                first_collision_unix_s=(
+                    None
+                    if old_score_risk is None
+                    else old_score_risk.first_collision_unix_s
+                ),
+                reference_unix_s=handoff,
+                old_hard_safe=old_hard_motion_safe,
+                clearance_zero_m=clearance_zero_m,
+                clearance_full_m=self._preferred_clearance_m,
+                ttc_zero_s=ttc_zero_s,
+                ttc_full_s=ttc_full_s,
+            )
             for index, candidate in enumerate(candidates):
                 clearance_diagnostics = self._last_candidate_clearance_diagnostics[index]
+                clearance_diagnostics.update(
+                    deviation_weight_effective=float(
+                        deviation_schedule.effective_weight
+                    ),
+                    deviation_clearance_gate=float(
+                        deviation_schedule.clearance_gate
+                    ),
+                    deviation_ttc_gate=float(deviation_schedule.ttc_gate),
+                    deviation_clearance_zero_m=float(clearance_zero_m),
+                    deviation_clearance_full_m=float(
+                        self._preferred_clearance_m
+                    ),
+                    deviation_ttc_zero_s=float(ttc_zero_s),
+                    deviation_ttc_full_s=float(ttc_full_s),
+                    old_predicted_minimum_clearance_m=(
+                        None
+                        if old_score_risk is None
+                        else _finite_diagnostic(old_score_risk.minimum_clearance_m)
+                    ),
+                    old_predicted_ttc_s=_finite_diagnostic(
+                        deviation_schedule.predicted_ttc_s
+                    ),
+                )
                 try:
                     merged = splice_with_quintic_bridge(
                         current_state=bridge_initial,
@@ -1053,7 +1175,6 @@ class MpdDynamicReplanNode(Node):
 
                 try:
                     new_collision = collision_plan_from_result(candidate, handoff)
-                    comparison_end = handoff + self._trajectory_duration_s
                     hard_risk = validate_collision_plan_actual_duration(
                         self._guard,
                         new_collision,
@@ -1278,7 +1399,7 @@ class MpdDynamicReplanNode(Node):
                         self._cost_weights["kinematic"] * kinematic
                         + self._cost_weights["tail_kinematic"] * tail_kinematic
                         + clearance_contribution
-                        + self._cost_weights["deviation"] * deviation
+                        + deviation_schedule.effective_weight * deviation
                         + self._cost_weights["mpd"] * float(normalized_scores[index])
                         + self._cost_weights["bridge"] * bridge_cost
                         + (self._cost_weights["switch"] if self._active_plan is not None else 0.0)
@@ -1295,6 +1416,9 @@ class MpdDynamicReplanNode(Node):
                         kinematic_cost=float(kinematic),
                         tail_kinematic_cost=float(tail_kinematic),
                         deviation_cost=float(deviation),
+                        deviation_contribution=float(
+                            deviation_schedule.effective_weight * deviation
+                        ),
                         motion_clearance_score=_finite_diagnostic(motion_clearance),
                         terminal_hold_clearance_score=_finite_diagnostic(
                             terminal_hold_clearance
@@ -1332,6 +1456,23 @@ class MpdDynamicReplanNode(Node):
                             "kinematic": kinematic,
                             "tail_kinematic": tail_kinematic,
                             "deviation": deviation,
+                            "deviation_weight_base": self._cost_weights["deviation"],
+                            "deviation_weight_effective": (
+                                deviation_schedule.effective_weight
+                            ),
+                            "deviation_contribution": (
+                                deviation_schedule.effective_weight * deviation
+                            ),
+                            "old_predicted_minimum_clearance_m": (
+                                None
+                                if old_score_risk is None
+                                else _finite_diagnostic(
+                                    old_score_risk.minimum_clearance_m
+                                )
+                            ),
+                            "old_predicted_ttc_s": _finite_diagnostic(
+                                deviation_schedule.predicted_ttc_s
+                            ),
                             "clearance": clearance,
                             "clearance_contribution": clearance_contribution,
                             "mpd": float(normalized_scores[index]),
@@ -1354,40 +1495,9 @@ class MpdDynamicReplanNode(Node):
             old_safe = False
             if self._active_plan is not None and self._active_collision_plan is not None:
                 window_end = handoff + self._comparison_horizon_s
-                comparison_end = handoff + self._trajectory_duration_s
                 try:
-                    old_comparison_collision = extend_collision_plan_with_terminal_hold(
-                        self._active_collision_plan, comparison_end
-                    )
-                    if self._clearance_score_mode == "mean_cvar":
-                        old_score_risk = self._guard.validate(
-                            old_comparison_collision,
-                            evaluation_world,
-                            handoff,
-                            comparison_end,
-                            preferred_clearance_m=self._preferred_clearance_m,
-                            cvar_fraction=self._clearance_cvar_fraction,
-                            terminal_hold_start_unix_s=float(
-                                self._active_collision_plan.absolute_times_s[-1]
-                            ),
-                        )
-                    else:
-                        old_score_risk = self._guard.validate(
-                            old_comparison_collision,
-                            evaluation_world,
-                            handoff,
-                            comparison_end,
-                        )
-                    old_hard_risk = (
-                        validate_collision_plan_actual_duration(
-                            self._guard,
-                            self._active_collision_plan,
-                            evaluation_world,
-                            handoff,
-                        )
-                        if self._clearance_score_mode == "mean_cvar"
-                        else old_score_risk
-                    )
+                    if old_score_risk is None or old_hard_risk is None:
+                        raise ValueError("old trajectory risk interval is invalid")
                     old_kinematic = common_window_kinematic_cost(
                         self._active_plan.result,
                         trajectory_start_unix_s=self._active_plan.start_unix_s,
