@@ -55,6 +55,25 @@ def test_adaptive_deviation_is_zero_for_imminent_or_hard_unsafe_old_plan():
     assert hard_unsafe.effective_weight == 0.0
 
 
+def test_disabled_adaptive_deviation_keeps_the_configured_weight():
+    schedule = adaptive_deviation_weight(
+        0.15,
+        minimum_clearance_m=0.0,
+        first_collision_unix_s=100.1,
+        reference_unix_s=100.0,
+        old_hard_safe=False,
+        clearance_zero_m=0.02,
+        clearance_full_m=0.10,
+        ttc_zero_s=2.0,
+        ttc_full_s=5.0,
+        enabled=False,
+    )
+
+    assert schedule.effective_weight == 0.15
+    assert schedule.clearance_gate == 0.0
+    assert schedule.ttc_gate == 0.0
+
+
 def _candidate(index, total):
     return CandidateCost(index, total, total, 0.0, 0.0, 0.0)
 

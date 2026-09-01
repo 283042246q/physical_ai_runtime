@@ -221,6 +221,7 @@ class MpdDynamicReplanNode(Node):
     _default_clearance_score_mode = "mean_cvar"
     _split_terminal_hold_clearance = False
     _default_cost_tail_kinematic_weight = 1.0
+    _default_cost_terminal_hold_clearance_weight = 0.2
     _default_cost_deviation_weight = 0.0
     _default_relative_switching_hysteresis = 0.0
 
@@ -273,8 +274,11 @@ class MpdDynamicReplanNode(Node):
             "cost_tail_kinematic_weight": self._default_cost_tail_kinematic_weight,
             "cost_clearance_weight": 4.0,
             "cost_motion_clearance_weight": 4.0,
-            "cost_terminal_hold_clearance_weight": 0.2,
+            "cost_terminal_hold_clearance_weight": (
+                self._default_cost_terminal_hold_clearance_weight
+            ),
             "cost_deviation_weight": self._default_cost_deviation_weight,
+            "adaptive_deviation_weight_enabled": True,
             "cost_mpd_weight": 0.10,
             "cost_bridge_weight": 0.10,
             "cost_switch_penalty": 0.02,
@@ -365,6 +369,9 @@ class MpdDynamicReplanNode(Node):
             "bridge": float(value("cost_bridge_weight")),
             "switch": float(value("cost_switch_penalty")),
         }
+        self._adaptive_deviation_weight_enabled = bool(
+            value("adaptive_deviation_weight_enabled")
+        )
         self._switching_hysteresis = float(value("switching_hysteresis"))
         self._relative_switching_hysteresis = float(
             value("relative_switching_hysteresis")
@@ -1095,6 +1102,7 @@ class MpdDynamicReplanNode(Node):
                 clearance_full_m=self._preferred_clearance_m,
                 ttc_zero_s=ttc_zero_s,
                 ttc_full_s=ttc_full_s,
+                enabled=self._adaptive_deviation_weight_enabled,
             )
             for index, candidate in enumerate(candidates):
                 clearance_diagnostics = self._last_candidate_clearance_diagnostics[index]
@@ -1112,6 +1120,9 @@ class MpdDynamicReplanNode(Node):
                     ),
                     deviation_ttc_zero_s=float(ttc_zero_s),
                     deviation_ttc_full_s=float(ttc_full_s),
+                    adaptive_deviation_weight_enabled=(
+                        self._adaptive_deviation_weight_enabled
+                    ),
                     old_predicted_minimum_clearance_m=(
                         None
                         if old_score_risk is None

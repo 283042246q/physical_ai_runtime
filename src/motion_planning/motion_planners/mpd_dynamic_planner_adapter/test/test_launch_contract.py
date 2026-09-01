@@ -46,11 +46,12 @@ def test_phase4_aligned_profile_matches_requested_ros_weights():
     assert parameters["relative_switching_hysteresis"] == 0.10
     assert parameters["split_terminal_hold_clearance"] is True
     assert parameters["cost_motion_clearance_weight"] == 4.0
-    assert parameters["cost_terminal_hold_clearance_weight"] == 0.2
+    assert parameters["cost_terminal_hold_clearance_weight"] == 0.5
     assert parameters["comparison_horizon_s"] == 2.0
     assert parameters["trajectory_duration_s"] == 10.0
     assert parameters["cost_kinematic_weight"] == 1.0
-    assert parameters["cost_tail_kinematic_weight"] == 4.0
+    assert parameters["cost_tail_kinematic_weight"] == 3.0
+    assert parameters["adaptive_deviation_weight_enabled"] is True
 
 
 def test_phase5_has_separate_entry_config_socket_and_mode():
@@ -60,9 +61,10 @@ def test_phase5_has_separate_entry_config_socket_and_mode():
     assert "mpd_space_time_replanner" in launch
     assert "mpd-space-time-runtime.sock" in config
     assert "phase5_joint" in launch
-    assert "cost_tail_kinematic_weight: 4.0" in config
+    assert "cost_tail_kinematic_weight: 3.0" in config
     assert "cost_motion_clearance_weight: 4.0" in config
-    assert "cost_terminal_hold_clearance_weight: 0.2" in config
+    assert "cost_terminal_hold_clearance_weight: 0.5" in config
+    assert "adaptive_deviation_weight_enabled: true" in config
     assert "cost_deviation_weight: 0.15" in config
     assert "relative_switching_hysteresis: 0.10" in config
     assert "jtc_safe_stop" in launch

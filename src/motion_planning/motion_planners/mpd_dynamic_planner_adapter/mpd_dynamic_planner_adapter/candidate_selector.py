@@ -63,6 +63,7 @@ def adaptive_deviation_weight(
     clearance_full_m: float,
     ttc_zero_s: float,
     ttc_full_s: float,
+    enabled: bool = True,
 ) -> AdaptiveDeviationWeight:
     """Fade continuity preference as the active trajectory becomes risky.
 
@@ -82,7 +83,11 @@ def adaptive_deviation_weight(
         float(minimum_clearance_m), clearance_zero_m, clearance_full_m
     )
     ttc_gate = _smoothstep_gate(predicted_ttc_s, ttc_zero_s, ttc_full_s)
-    risk_gate = min(clearance_gate, ttc_gate) if old_hard_safe else 0.0
+    risk_gate = (
+        (min(clearance_gate, ttc_gate) if old_hard_safe else 0.0)
+        if enabled
+        else 1.0
+    )
     return AdaptiveDeviationWeight(
         effective_weight=base_weight * risk_gate,
         clearance_gate=clearance_gate,
