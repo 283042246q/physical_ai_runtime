@@ -1,0 +1,4 @@
+robot_model: marvin_bimanual
+runtime_mode: inference_time_optimized
+execute: false
+worker_socket: /tmp/mpd_marvin_bimanual_space_time.sock

@@ -1,0 +1,4 @@
+robot_model: marvin_bimanual
+runtime_mode: snapshot_no_time
+execute: false
+worker_socket: /tmp/mpd_marvin_bimanual_static.sock

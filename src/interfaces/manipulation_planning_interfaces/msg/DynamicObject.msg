@@ -1,0 +1,11 @@
+string object_id
+uint8 SPHERE=0
+uint8 BOX=1
+uint8 CAPSULE=2
+uint8 shape_type
+float64[3] size_xyz
+geometry_msgs/Pose pose
+geometry_msgs/Twist twist
+float64[36] covariance
+float64 inflation_m
+builtin_interfaces/Time valid_until

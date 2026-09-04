@@ -1,0 +1,4 @@
+robot_model: marvin_bimanual
+runtime_mode: fixed_time_dynamic
+execute: false
+worker_socket: /tmp/mpd_marvin_bimanual_dynamic.sock

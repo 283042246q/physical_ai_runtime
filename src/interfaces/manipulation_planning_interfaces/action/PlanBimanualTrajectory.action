@@ -1,0 +1,33 @@
+uint8 LEFT_ONLY=0
+uint8 RIGHT_ONLY=1
+uint8 DUAL_INDEPENDENT=2
+uint8 COOPERATIVE_RIGID=3
+std_msgs/Header header
+uint8 task_mode
+string request_id
+string[] joint_names
+float64[] q_goal
+bool has_left_goal_pose
+geometry_msgs/PoseStamped left_goal_pose
+bool has_right_goal_pose
+geometry_msgs/PoseStamped right_goal_pose
+bool has_object_goal_pose
+geometry_msgs/PoseStamped object_goal_pose
+string grasp_profile
+bool execute
+float64 planning_budget_s
+---
+bool success
+string request_id
+string error_code
+string message
+uint64 world_version
+trajectory_msgs/JointTrajectory trajectory
+float64 min_clearance_m
+float64 max_closure_translation_error_m
+float64 max_closure_rotation_error_rad
+---
+uint8 stage
+float32 progress
+uint64 world_version
+string detail
