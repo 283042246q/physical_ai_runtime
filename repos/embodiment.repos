@@ -4,12 +4,22 @@ repositories:
   embodiments/robots/marvin/marvin_description:
     type: git
     url: https://github.com/Gabriel-Ning/marvin_description.git
-    # Site-calibrated geometry (mounts, stand, base mesh). Official CAD lives on main.
-    version: dev
+    version: 96fa5389bec20d83fb7a2bff3f720994645d4525
+
   embodiments/robots/marvin/marvin_hardware_interface:
     type: git
     url: https://github.com/Gabriel-Ning/marvin_hardware_interface.git
-    version: main
+    version: 5015ac5d9e282fa1a5fe949d5c52582c74b82059
+
+  embodiments/end_effectors/pika_gripper/pika_gripper_description:
+    type: git
+    url: https://github.com/Gabriel-Ning/pika_gripper_description.git
+    version: 315abe2c2eba2ee21a34286488cb8a6ab85cd81b
+
+  embodiments/end_effectors/pika_gripper/pika_gripper_hardware_interface:
+    type: git
+    url: https://github.com/Gabriel-Ning/pika_gripper_hardware_interface.git
+    version: 8c8a6d419ca20498c33ee440b79060380bb07708
   # Franka: franka_ros2 monorepo (jazzy) + description pin matching upstream
   # dependency.repos. After import, run scripts/franka_colcon_ignore.sh so
   # Gazebo/mobile/vision packages and vendored realtime_tools are skipped.
