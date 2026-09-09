@@ -19,6 +19,17 @@ class BimanualPlannerBackend:
     def health(self) -> dict:
         return self.client.request({"schema_version": 1, "op": "health"})
 
+    def update_world(self, world: dict) -> int:
+        response = self.client.request(
+            {"schema_version": 1, "op": "update_world", "world": world}
+        )
+        if response.get("status") != "OK":
+            error = response.get("error") or {}
+            raise WorkerRejected(
+                str(response.get("status")), str(error.get("message", ""))
+            )
+        return int(response["world_version"])
+
     def plan(
         self,
         request: dict,

@@ -14,11 +14,14 @@ setup(
         (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
     ],
     install_requires=[],
+    tests_require=["pytest"],
+    extras_require={"test": ["pytest"]},
     zip_safe=True,
     entry_points={
         "console_scripts": [
             "bimanual_planner_node = mpd_bimanual_planner_adapter.node:main",
             "marvin_bimanual_one_shot = mpd_bimanual_planner_adapter.one_shot_node:main",
+            "marvin_bimanual_dynamic_planner = mpd_bimanual_planner_adapter.dynamic_node:main",
         ]
     },
 )
