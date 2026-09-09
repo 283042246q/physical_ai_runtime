@@ -68,3 +68,17 @@ marvin_mpd_bimanual_bringup/urdf/marvin_pika_bimanual.urdf.xacro \
 
 Do not start a real `controller_manager` until the robot is powered, safed, and
 an operator is at the emergency stop.
+
+## Phase-3 one-shot planning
+
+The one-shot demo defaults to validation-only and keeps MPD inside its Conda
+process. It reads all fourteen canonical joints, binds the request/result/NPZ/
+scene hashes, and will only ever submit one combined 14-joint controller goal.
+
+```bash
+ros2 launch marvin_mpd_bimanual_bringup \
+  marvin_mpd_bimanual_one_shot.launch.py plan_only:=true
+```
+
+Fake execution requires the fake controller launch plus an explicit
+`plan_only:=false`. Real hardware is never enabled by this launch file.

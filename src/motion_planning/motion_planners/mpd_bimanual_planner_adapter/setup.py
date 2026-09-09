@@ -15,5 +15,10 @@ setup(
     ],
     install_requires=[],
     zip_safe=True,
-    entry_points={"console_scripts": ["bimanual_planner_node = mpd_bimanual_planner_adapter.node:main"]},
+    entry_points={
+        "console_scripts": [
+            "bimanual_planner_node = mpd_bimanual_planner_adapter.node:main",
+            "marvin_bimanual_one_shot = mpd_bimanual_planner_adapter.one_shot_node:main",
+        ]
+    },
 )
